@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arrange — battle music</title>
+    <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,500;6..96,600&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">arrange</span>
+          <span class="brand-sub">battle music · a hook in · a loopable track out</span>
+        </div>
+        <div id="legend" class="legend" aria-label="voice colours"></div>
+        <div id="keyLabel" class="keychip">—</div>
+      </header>
+
+      <nav id="rail" class="rail" aria-label="stages"></nav>
+
+      <div class="cols">
+        <main class="panel" id="stage"></main>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <p class="side-title">Lineage</p>
+            <div id="evolution" class="tree"></div>
+          </section>
+          <section class="panel">
+            <p class="side-title">Pinned takes</p>
+            <div id="pinTray" class="pin-tray empty"></div>
+          </section>
+        </aside>
+      </div>
+
+      <div class="foot">
+        <button id="stageBack" class="ghost">← back</button>
+        <button id="stageNext" class="primary">continue →</button>
+      </div>
+
+      <details class="drawer" id="advanced">
+        <summary>Advanced — import, harmony, export</summary>
+        <div class="drawer-body">
+          <div class="controls">
+            <label class="file">
+              <input id="file" type="file" accept=".mid,.midi,audio/midi" />
+              <span>Load MIDI</span>
+            </label>
+            <button id="demo" class="ghost">Load classic demo</button>
+            <button id="extend" class="ghost">Extend source ×2</button>
+            <button id="promote" class="ghost">Use melody as source</button>
+            <button id="export" class="ghost">Export MIDI</button>
+          </div>
+
+          <div id="chordStrip" class="chordstrip">Chords appear here once a hook is committed.</div>
+          <div class="rowline">
+            <label class="field grow">Harmony reading
+              <input id="temp" type="range" min="5" max="200" value="60" />
+            </label>
+            <span id="tempVal" class="mono">0.60</span>
+            <button id="reinfer" class="ghost small">Re-infer chords</button>
+          </div>
+          <p class="hint">The chords are inferred, then <em>yours</em>. Click a chord to change it (shift-click steps back). A named battle-progression library replaces this inference in the next phase.</p>
+        </div>
+      </details>
+
+      <footer id="status" class="status">Generate a set of hooks to begin.</footer>
+    </div>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>

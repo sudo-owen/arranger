@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Battle mode — layout directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,600&family=DM+Mono:wght@400&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="mock.css" />
+<style>
+  .wrap { max-width: 820px; margin: 0 auto; }
+  .opt { display: block; text-decoration: none; color: inherit; margin-bottom: 12px; }
+  .opt .panel:hover { border-color: var(--accent); }
+  .opt h3 { margin: 0 0 4px; font-size: 15px; }
+  .opt .lede { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+  .pro { font-size: 12px; color: var(--muted); }
+  .pro b { color: var(--text); font-weight: 600; }
+  .ascii { font-family: var(--mono); font-size: 10px; color: var(--border-hi); white-space: pre; line-height: 1.25; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">arrange <small>battle mode — three layout directions</small></div>
+  </div>
+
+  <p class="hint">
+    Lo-fi and clickable. Same fake song in all three, same audition model
+    (click a candidate, it crosses over at the next bar line). Judge the structure,
+    not the polish.
+  </p>
+
+  <a class="opt" href="a-stage-rail.html"><div class="panel">
+    <h3>A · Stage rail</h3>
+    <p class="lede">One decision at a time. Completed stages collapse to chips across the top; lineage sits in a sidebar.</p>
+    <p class="pro"><b>Try:</b> click through the five stages; the rail fills in behind you. Drag the mood pad on stage 03.</p>
+    <p class="pro"><b>Strong:</b> clearest first run, least to learn. <b>Weak:</b> tweaking an earlier choice means leaving where you are.</p>
+    <pre class="ascii">┌──────────────────────────────────────────┐
+│ ✓HOOK ─ ●BED ─ ○MOOD ─ ○FORM ─ ○VARY     │
+├───────────────────────────┬──────────────┤
+│  [card][card][card][card] │  lineage     │
+│  ── selected ──────────── │  pins        │
+│      [← back] [continue →]│              │
+└───────────────────────────┴──────────────┘</pre>
+  </div></a>
+
+  <a class="opt" href="b-workbench.html"><div class="panel">
+    <h3>B · Workbench</h3>
+    <p class="lede">The song is always on screen. An alternatives tray stays pointed at whatever you have selected — a stage, or a single voice.</p>
+    <p class="pro"><b>Try:</b> click a layer on the left (melody, brass…) and watch the tray retarget; toggle 🔒; pick Mood to swap the tray for the pad.</p>
+    <p class="pro"><b>Strong:</b> small tweaks are always one click away. <b>Weak:</b> nothing tells a newcomer where to start.</p>
+    <pre class="ascii">┌────────┬──────────────────────┬─────────┐
+│ build  │  ═══ song timeline ══│ lineage │
+│ layers ├──────────────────────┤ pins    │
+│ 🔒 ⟳   │  alternatives for →  │         │
+│        │  [alt][alt][alt]     │         │
+└────────┴──────────────────────┴─────────┘</pre>
+  </div></a>
+
+  <a class="opt" href="c-lineage.html"><div class="panel">
+    <h3>C · Lineage canvas</h3>
+    <p class="lede">The history graph is the interface. Every choice is a node you can play, pin, or branch from; siblings are the alternatives.</p>
+    <p class="pro"><b>Try:</b> select a node and press <b>⟳ 4 more</b> to spawn siblings, then <b>→ next stage</b> to grow a child. Notice nothing is ever destroyed.</p>
+    <p class="pro"><b>Strong:</b> exploration is visible and comparison is spatial. <b>Weak:</b> gets crowded fast — needs collapsing and pruning.</p>
+    <pre class="ascii">┌──────────────────────────────────────────┐
+│  [hook]──┬──[bed]──┬──[mood]──[form]     │
+│          │         └──[mood']            │
+│          └──[bed']──── [mood"]           │
+├──────────────────────────────────────────┤
+│ selected · ▶ ──────── 0:07/0:23   ☆ pin  │
+└──────────────────────────────────────────┘</pre>
+  </div></a>
+</div>
+</body>
+</html>

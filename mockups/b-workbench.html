@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>B · Workbench — layout mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,600&family=DM+Mono:wght@400&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="mock.css" />
+<style>
+  .cols { display: grid; grid-template-columns: 170px 1fr 230px; gap: 12px; align-items: start; }
+  .rail-v button {
+    display: block; width: 100%; text-align: left; border-radius: 5px; margin-bottom: 4px;
+    border-color: transparent; background: transparent; font-size: 13px;
+  }
+  .rail-v button.on { background: var(--accent-soft); border-color: var(--accent); }
+  .rail-v button.done .tick { color: var(--accent); }
+
+  .layerrow { display: flex; align-items: center; gap: 6px; padding: 4px 5px; border-radius: 5px; cursor: pointer; font-family: var(--mono); font-size: 12px; }
+  .layerrow:hover { background: var(--panel-2); }
+  .layerrow.on { background: var(--accent-soft); }
+  .layerrow .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .layerrow .nm { flex: 1; }
+  .layerrow.mut .nm, .layerrow.mut .sw { opacity: .35; }
+
+  .stage-track { display: grid; grid-template-columns: 54px 1fr; gap: 6px; align-items: center; margin-bottom: 3px; }
+  .stage-track .lbl { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: right; }
+  .stage-track .roll { height: 20px; }
+  .stage-track.dim .roll { opacity: .3; }
+  .secbar { display: grid; grid-template-columns: 54px 1fr; gap: 6px; margin-bottom: 5px; }
+  .secbar .row { display: flex; height: 16px; border-radius: 3px; overflow: hidden; }
+  .secbar .row div { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9px; border-right: 1px solid var(--surface); color: #1a1813; }
+
+  .tool { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .tool-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .tool-head .t { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .alts { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 7px; }
+  .alt { border: 1px solid var(--border); border-radius: 5px; background: var(--panel-2); padding: 6px; cursor: pointer; }
+  .alt:hover { border-color: var(--border-hi); }
+  .alt.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .alt .roll { height: 40px; }
+  .alt small { display: block; margin-top: 4px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+
+  .pad { width: 170px; height: 170px; border: 1px solid var(--border-hi); border-radius: 6px; position: relative; background: var(--roll-bg); cursor: crosshair; flex: none; }
+  .pad .dot { position: absolute; width: 11px; height: 11px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--accent); }
+  .pad .ax { position: absolute; color: var(--muted); font-size: 10px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">arrange <small>battle mode · direction B — workbench</small></div>
+  <div class="transport" style="flex:1;max-width:340px">
+    <button>▶</button><button>↺</button><div class="bar"><em></em></div><span>0:07 / 0:23</span>
+  </div>
+  <div class="meta">C minor · 4/4 · 168 BPM</div>
+  <div class="mocknav">
+    <a href="index.html">index</a><a href="a-stage-rail.html">A</a>
+    <a class="here" href="b-workbench.html">B</a><a href="c-lineage.html">C</a>
+  </div>
+</div>
+
+<div class="cols">
+  <div>
+    <div class="panel" style="margin-bottom:10px">
+      <p class="side-title">Build</p>
+      <div class="rail-v" id="rail"></div>
+    </div>
+    <div class="panel">
+      <p class="side-title">Layers</p>
+      <div id="layers"></div>
+      <div class="note-swap">🔒 holds a voice while you reroll the others.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="timeline"></div>
+    <div class="tool" id="tool"></div>
+  </div>
+
+  <div>
+    <div class="panel" style="margin-bottom:10px">
+      <p class="side-title">Lineage</p>
+      <div class="tree" id="tree"></div>
+    </div>
+    <div class="panel">
+      <p class="side-title">Pinned takes</p>
+      <div class="pins" id="pins"></div>
+      <button class="small" style="margin-top:8px">⇄ compare A/B</button>
+      <div class="note-swap">Pins cross over at the next bar line.</div>
+    </div>
+  </div>
+</div>
+
+<script src="mock.js"></script>
+<script>
+const M = window.MOCK;
+const state = {
+  focus: { type: 'stage', key: 'bed' },
+  hook: 3, bed: 1, form: 1, u: 0.7, f: 0.3,
+  pins: [1, 2, 3], alt: 1,
+  layers: M.LAYERS.map((l) => ({ ...l, muted: false })),
+};
+const el = (id) => document.getElementById(id);
+const SECTIONS = [['intro', 4], ['A', 8], ["A'", 8], ['B', 8], ['A"', 8], ['tag', 4]];
+
+function renderRail() {
+  el('rail').innerHTML = '';
+  M.STAGES.forEach((s, i) => {
+    const b = document.createElement('button');
+    const on = state.focus.type === 'stage' && state.focus.key === s.key;
+    b.className = (on ? 'on ' : '') + (i < 2 ? 'done' : '');
+    b.innerHTML = '<span class="tick">' + (i < 2 ? '◆' : '◇') + '</span> ' + s.label;
+    b.onclick = () => { state.focus = { type: 'stage', key: s.key }; render(); };
+    el('rail').appendChild(b);
+  });
+}
+
+function renderLayers() {
+  el('layers').innerHTML = '';
+  state.layers.forEach((l) => {
+    const on = state.focus.type === 'layer' && state.focus.key === l.role;
+    const r = document.createElement('div');
+    r.className = 'layerrow' + (on ? ' on' : '') + (l.muted ? ' mut' : '');
+    r.innerHTML = '<span class="sw" style="background:' + M.ROLE_COLOR[l.role] + '"></span>'
+      + '<span class="nm">' + l.label + '</span>'
+      + '<button class="icon" title="lock">' + (l.locked ? '🔒' : '🔓') + '</button>'
+      + '<button class="icon" title="reroll">⟳</button>';
+    r.onclick = () => { state.focus = { type: 'layer', key: l.role }; render(); };
+    const [lock, roll] = r.querySelectorAll('button');
+    lock.onclick = (e) => { e.stopPropagation(); l.locked = !l.locked; render(); };
+    roll.onclick = (e) => { e.stopPropagation(); state.focus = { type: 'layer', key: l.role }; render(); };
+    el('layers').appendChild(r);
+  });
+}
+
+function renderTimeline() {
+  const t = el('timeline');
+  t.innerHTML = '';
+  const total = SECTIONS.reduce((a, s) => a + s[1], 0);
+  const divs = [];
+  let acc = 0;
+  for (const s of SECTIONS) { acc += s[1]; divs.push(acc / total); }
+
+  const sec = document.createElement('div');
+  sec.className = 'secbar';
+  sec.innerHTML = '<span></span><div class="row">' + SECTIONS.map((s, i) => {
+    const c = ['var(--drums)', 'var(--melody)', 'var(--melody)', 'var(--winds)', 'var(--brass)', 'var(--bass)'][i % 6];
+    return '<div style="width:' + ((s[1] / total) * 100) + '%;background:' + c + '">' + s[0] + '</div>';
+  }).join('') + '</div>';
+  t.appendChild(sec);
+
+  state.layers.forEach((l) => {
+    const dim = state.focus.type === 'layer' && state.focus.key !== l.role;
+    const row = document.createElement('div');
+    row.className = 'stage-track' + (dim || l.muted ? ' dim' : '');
+    row.innerHTML = '<span class="lbl">' + l.label + '</span><div class="roll"></div>';
+    t.appendChild(row);
+    const notes = l.role === 'drums'
+      ? M.drumLine(l.role.length * 9, 64)
+      : M.line(l.role.length * 31 + state.bed, { steps: 64, density: l.role === 'bass' ? 0.9 : 0.6, low: 4, high: 10 });
+    M.paint(row.querySelector('.roll'), [{ role: l.role, notes }], divs, 0.31);
+  });
+
+  const foot = document.createElement('div');
+  foot.className = 'transport';
+  foot.style.marginTop = '6px';
+  foot.innerHTML = '<span style="margin-left:60px">40 bars · 0:23 · loops seamlessly</span>';
+  t.appendChild(foot);
+}
+
+function altCards(items, linesFor, sub, label) {
+  const wrap = document.createElement('div');
+  wrap.className = 'alts';
+  items.forEach((it) => {
+    const c = document.createElement('div');
+    c.className = 'alt' + (it.id === state.alt ? ' sel' : '');
+    c.onclick = () => { state.alt = it.id; render(); };
+    c.innerHTML = '<div class="roll"></div><small>' + sub(it) + '</small>';
+    wrap.appendChild(c);
+    M.paint(c.querySelector('.roll'), linesFor(it), [0.5], null);
+  });
+  return wrap;
+}
+
+function renderTool() {
+  const t = el('tool');
+  t.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'tool-head';
+  t.appendChild(head);
+
+  if (state.focus.type === 'layer') {
+    const l = state.layers.find((x) => x.role === state.focus.key);
+    head.innerHTML = '<span class="t">Alternatives for → ' + l.label + '</span>'
+      + '<span><button class="small">⟳ more</button> <button class="small">± neighbours</button></span>';
+    t.appendChild(altCards(
+      [1, 2, 3, 4, 5].map((i) => ({ id: i })),
+      (it) => [{ role: l.role, notes: M.line(it.id * 17 + l.role.length, { steps: 16, density: 0.7, low: 4, high: 10 }) }],
+      (it) => l.label + ' ' + it.id,
+    ));
+    const n = document.createElement('div');
+    n.className = 'note-swap';
+    n.textContent = 'Only this voice changes — every other track stays byte-identical.';
+    t.appendChild(n);
+    return;
+  }
+
+  const k = state.focus.key;
+  if (k === 'hook') {
+    head.innerHTML = '<span class="t">Alternatives for → hook</span><span><button class="small">⟳ more</button></span>';
+    t.appendChild(altCards(M.HOOKS, (h) => M.hookLines(h.id * 11), (h) => h.name + ' · ' + h.scheme));
+  } else if (k === 'bed') {
+    head.innerHTML = '<span class="t">Alternatives for → bed</span><span><button class="small">⟳ more</button> <button class="small">± neighbours</button></span>';
+    t.appendChild(altCards(M.BEDS, (b) => M.bandLines(b.id * 7, 16), (b) => b.prog));
+  } else if (k === 'form') {
+    head.innerHTML = '<span class="t">Alternatives for → form</span><span><button class="small">30s</button> <button class="small primary">60s</button> <button class="small">90s</button></span>';
+    const wrap = document.createElement('div');
+    M.FORMS.forEach((f) => {
+      const total = f.sections.reduce((a, s) => a + s[1], 0);
+      const d = document.createElement('div');
+      d.className = 'alt' + (f.id === state.form ? ' sel' : '');
+      d.style.marginBottom = '6px';
+      d.onclick = () => { state.form = f.id; render(); };
+      d.innerHTML = '<div class="secbar" style="grid-template-columns:1fr"><div class="row">'
+        + f.sections.map((s, i) => {
+          const c = ['var(--drums)', 'var(--melody)', 'var(--melody)', 'var(--winds)', 'var(--brass)', 'var(--bass)'][i % 6];
+          return '<div style="width:' + ((s[1] / total) * 100) + '%;background:' + c + '">' + s[0] + '</div>';
+        }).join('') + '</div></div><small>' + f.label + '</small>';
+      wrap.appendChild(d);
+    });
+    t.appendChild(wrap);
+  } else if (k === 'vary') {
+    head.innerHTML = '<span class="t">Alternatives for → variation</span>';
+    const wrap = document.createElement('div');
+    [['A', 'as written'], ["A'", 'octave up + thin'], ['B', 'sub-melody'], ['A"', 'brass restatement']].forEach((v) => {
+      const r = document.createElement('div');
+      r.style.cssText = 'display:flex;gap:8px;align-items:center;padding:5px 0;font-size:12px';
+      r.innerHTML = '<b style="font-family:var(--mono);width:30px;font-weight:400">' + v[0] + '</b>'
+        + '<select><option>' + v[1] + '</option><option>ornament</option><option>invert</option><option>thin</option></select>'
+        + '<button class="small">⟳</button>';
+      wrap.appendChild(r);
+    });
+    t.appendChild(wrap);
+  } else if (k === 'mood') {
+    head.innerHTML = '<span class="t">Mood — drag while it plays</span>';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:16px;align-items:flex-start';
+    const pad = document.createElement('div');
+    pad.className = 'pad';
+    pad.innerHTML = '<span class="ax" style="left:6px;top:4px">winning</span>'
+      + '<span class="ax" style="left:6px;bottom:4px">losing</span>'
+      + '<span class="ax" style="right:6px;bottom:4px">urgent →</span><div class="dot"></div>';
+    const dot = pad.querySelector('.dot');
+    const place = () => { dot.style.left = (state.u * 100) + '%'; dot.style.top = ((1 - state.f) * 100) + '%'; };
+    const side = document.createElement('div');
+    const info = () => {
+      const x = M.moodText(state.u, state.f);
+      side.innerHTML = '<div style="font-family:var(--mono);font-size:12px">' + x.name + '</div>'
+        + '<div class="hint">' + x.detail + '</div>'
+        + '<div class="note-swap">The song above keeps playing while you drag — changes land on the next bar line.</div>';
+    };
+    const drag = (e) => {
+      const r = pad.getBoundingClientRect();
+      state.u = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      state.f = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+      place(); info();
+    };
+    pad.onmousedown = (e) => { drag(e); pad.onmousemove = drag; };
+    window.addEventListener('mouseup', () => { pad.onmousemove = null; });
+    place(); info();
+    row.appendChild(pad); row.appendChild(side);
+    t.appendChild(row);
+  }
+}
+
+function renderSide() {
+  el('tree').innerHTML = '';
+  [['● Hook 3', 0], ['├─● Bed A', 1], ['│  └─● Mood .7/.3', 2], ['├─○ Bed B', 1], ['└─○ Bed C', 1]].forEach((n, i) => {
+    const d = document.createElement('div');
+    d.className = i === 2 ? 'on' : '';
+    d.textContent = n[0];
+    el('tree').appendChild(d);
+  });
+  el('pins').innerHTML = '';
+  state.pins.forEach((p) => {
+    const d = document.createElement('div');
+    d.className = 'pin';
+    d.innerHTML = '<b>Take ' + p + '</b><span>×</span>';
+    d.querySelector('span').onclick = () => { state.pins = state.pins.filter((x) => x !== p); render(); };
+    el('pins').appendChild(d);
+  });
+}
+
+function render() { renderRail(); renderLayers(); renderTimeline(); renderTool(); renderSide(); }
+render();
+</script>
+</body>
+</html>

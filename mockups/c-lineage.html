@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>C · Lineage canvas — layout mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,600&family=DM+Mono:wght@400&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="mock.css" />
+<style>
+  .canvas { position: relative; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); overflow: auto; height: 62vh; min-height: 380px; }
+  .stagecols { position: absolute; inset: 0; pointer-events: none; }
+  .stagecols div { position: absolute; top: 0; bottom: 0; border-left: 1px dashed #26262210; }
+  .stagecols span { position: absolute; top: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #4a4941; }
+  svg.edges { position: absolute; inset: 0; overflow: visible; }
+  svg.edges path { fill: none; stroke: var(--border-hi); stroke-width: 1.2; }
+
+  .node {
+    position: absolute; width: 152px; padding: 7px 8px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--panel-2); cursor: pointer; text-align: left;
+  }
+  .node:hover { border-color: var(--border-hi); }
+  .node.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .node .k { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+  .node .n { display: block; font-size: 12px; margin: 1px 0 2px; }
+  .node .roll { height: 26px; margin: 3px 0; }
+  .node .d { display: block; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .node .badges { position: absolute; top: -8px; right: 6px; display: flex; gap: 3px; }
+  .node .badges b { font-size: 9px; font-family: var(--mono); font-weight: 400; background: var(--accent); color: #1a1813; border-radius: 999px; padding: 1px 6px; }
+  .node .badges i { font-size: 9px; font-family: var(--mono); font-style: normal; background: var(--panel); border: 1px solid var(--border-hi); color: var(--muted); border-radius: 999px; padding: 1px 6px; }
+
+  .dock { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+  .dock .who { min-width: 190px; }
+  .dock .who b { display: block; font-size: 12px; font-weight: 600; }
+  .dock .who span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .dock .roll { flex: 1; height: 34px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">arrange <small>battle mode · direction C — lineage canvas</small></div>
+  <div class="meta">C minor · 4/4 · 168 BPM</div>
+  <div>
+    <button class="small" id="more">⟳ 4 more from here</button>
+    <button class="small primary" id="advance">→ next stage</button>
+  </div>
+  <div class="mocknav">
+    <a href="index.html">index</a><a href="a-stage-rail.html">A</a>
+    <a href="b-workbench.html">B</a><a class="here" href="c-lineage.html">C</a>
+  </div>
+</div>
+
+<div class="canvas" id="canvas">
+  <div class="stagecols" id="cols"></div>
+  <svg class="edges" id="edges"></svg>
+</div>
+
+<div class="dock">
+  <div class="who" id="who"></div>
+  <div class="roll" id="dockroll"></div>
+  <div class="transport" style="min-width:170px">
+    <button>▶</button><div class="bar"><em></em></div><span>0:07 / 0:23</span>
+  </div>
+  <button class="small" id="pin">☆ pin</button>
+</div>
+
+<p class="hint" style="margin-top:10px">
+  Every choice leaves a node you can play, pin, or branch from. Siblings are the alternatives —
+  nothing is destroyed by trying something else. Selecting a node and pressing <b>⟳ 4 more</b>
+  spawns fresh siblings; <b>→ next stage</b> grows a child.
+</p>
+
+<script src="mock.js"></script>
+<script>
+const M = window.MOCK;
+const STAGE_X = { hook: 20, bed: 210, mood: 400, form: 590, vary: 780 };
+const ORDER = ['hook', 'bed', 'mood', 'form', 'vary'];
+let uid = 100;
+
+let nodes = [
+  { id: 1, parent: null, stage: 'hook', name: 'Gallop', detail: 'seq↑ · 4 pitches', pinned: false },
+  { id: 2, parent: 1, stage: 'bed', name: 'i–♭VI–♭VII–i', detail: 'full band', pinned: true },
+  { id: 3, parent: 1, stage: 'bed', name: 'Andalusian', detail: 'thin · stabs', pinned: true },
+  { id: 4, parent: 2, stage: 'mood', name: 'urg .7 / fort .3', detail: 'driving / neutral', pinned: false },
+  { id: 5, parent: 3, stage: 'mood', name: 'urg .9 / fort .1', detail: 'frantic / desperate', pinned: false },
+  { id: 6, parent: 4, stage: 'form', name: '40 bars · 60s', detail: "intro A A' B A\" tag", pinned: false },
+];
+let sel = 4;
+
+const el = (id) => document.getElementById(id);
+
+function layout() {
+  const rows = {};
+  const pos = {};
+  for (const n of nodes) {
+    const r = rows[n.stage] || 0;
+    rows[n.stage] = r + 1;
+    pos[n.id] = { x: STAGE_X[n.stage], y: 34 + r * 96 };
+  }
+  return pos;
+}
+
+function render() {
+  const canvas = el('canvas');
+  canvas.querySelectorAll('.node').forEach((n) => n.remove());
+  const pos = layout();
+
+  el('cols').innerHTML = ORDER.map((s) =>
+    '<div style="left:' + (STAGE_X[s] - 12) + 'px"></div><span style="left:' + STAGE_X[s] + 'px">' + s + '</span>').join('');
+
+  const edges = el('edges');
+  edges.innerHTML = '';
+  for (const n of nodes) {
+    if (n.parent == null) continue;
+    const a = pos[n.parent];
+    const b = pos[n.id];
+    if (!a || !b) continue;
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', 'M ' + (a.x + 152) + ' ' + (a.y + 34) + ' C ' + (a.x + 178) + ' ' + (a.y + 34)
+      + ', ' + (b.x - 26) + ' ' + (b.y + 34) + ', ' + b.x + ' ' + (b.y + 34));
+    edges.appendChild(p);
+  }
+
+  for (const n of nodes) {
+    const d = document.createElement('div');
+    d.className = 'node' + (n.id === sel ? ' on' : '');
+    d.style.left = pos[n.id].x + 'px';
+    d.style.top = pos[n.id].y + 'px';
+    const badges = (n.id === sel ? '<b>playing</b>' : '') + (n.pinned ? '<i>⬥ pinned</i>' : '');
+    d.innerHTML = '<div class="badges">' + badges + '</div>'
+      + '<span class="k">' + n.stage + '</span><span class="n">' + n.name + '</span>'
+      + '<div class="roll"></div><span class="d">' + n.detail + '</span>';
+    d.onclick = () => { sel = n.id; render(); };
+    canvas.appendChild(d);
+    const lines = n.stage === 'hook' ? M.hookLines(n.id * 11) : M.bandLines(n.id * 7, 16);
+    M.paint(d.querySelector('.roll'), lines, [0.5], null);
+  }
+
+  const cur = nodes.find((n) => n.id === sel);
+  el('who').innerHTML = '<b>' + cur.stage.toUpperCase() + ' · ' + cur.name + '</b><span>' + cur.detail + '</span>';
+  M.paint(el('dockroll'), M.bandLines(cur.id * 7, 32), [0.25, 0.5, 0.75], 0.31);
+  el('pin').textContent = cur.pinned ? '★ pinned' : '☆ pin';
+  el('advance').disabled = ORDER.indexOf(cur.stage) === ORDER.length - 1;
+}
+
+el('more').onclick = () => {
+  const cur = nodes.find((n) => n.id === sel);
+  const names = { hook: ['Fanfare', 'Driving 8ths', 'Riff', 'Descending'], bed: ['i–iv–V–i', 'vi–IV–I–V', 'i–♭VI–iv–V', 'i–v–♭VI'], mood: ['urg .4 / fort .8', 'urg .8 / fort .6', 'urg .2 / fort .5', 'urg .6 / fort .2'], form: ['30s · 20 bars', '90s · 60 bars', '60s · alt plan', '60s · long A'], vary: ['octave up', 'thin', 'invert', 'brass'] };
+  for (let i = 0; i < 4; i++) {
+    nodes.push({ id: ++uid, parent: cur.parent, stage: cur.stage, name: names[cur.stage][i], detail: 'sibling of ' + cur.name, pinned: false });
+  }
+  render();
+};
+
+el('advance').onclick = () => {
+  const cur = nodes.find((n) => n.id === sel);
+  const next = ORDER[ORDER.indexOf(cur.stage) + 1];
+  const seed = { bed: ['i–♭VI–♭VII–i', 'full band'], mood: ['urg .5 / fort .5', 'driving / neutral'], form: ['40 bars · 60s', "intro A A' B A\" tag"], vary: ['per-recurrence', "A' thin · A\" brass"] }[next];
+  const n = { id: ++uid, parent: cur.id, stage: next, name: seed[0], detail: seed[1], pinned: false };
+  nodes.push(n);
+  sel = n.id;
+  render();
+};
+
+el('pin').onclick = () => {
+  const cur = nodes.find((n) => n.id === sel);
+  cur.pinned = !cur.pinned;
+  render();
+};
+
+render();
+</script>
+</body>
+</html>

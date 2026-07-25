@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>A · Stage rail — layout mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,600&family=DM+Mono:wght@400&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="mock.css" />
+<style>
+  .rail { display: flex; align-items: stretch; gap: 0; margin-bottom: 18px; }
+  .rail button {
+    flex: 1; border-radius: 0; border-left: 0; padding: 13px 15px; text-align: left;
+    background: var(--panel); border-color: var(--border);
+  }
+  .rail button:first-child { border-left: 1px solid var(--border); border-radius: 6px 0 0 6px; }
+  .rail button:last-child { border-radius: 0 6px 6px 0; }
+  .rail button.done { color: var(--muted); }
+  .rail button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+  .rail .k { display: block; font-family: var(--mono); font-size: 15px; letter-spacing: .08em; text-transform: uppercase; }
+  .rail .v { display: block; font-size: 15px; color: var(--muted); margin-top: 3px; }
+
+  .cols { display: grid; grid-template-columns: 1fr 310px; gap: 16px; align-items: start; }
+  .foot { display: flex; justify-content: space-between; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+  .pad { width: 270px; height: 270px; border: 1px solid var(--border-hi); border-radius: 6px; position: relative; background: var(--roll-bg); cursor: crosshair; flex: none; }
+  .pad .dot { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--accent); }
+  .pad .ax { position: absolute; color: var(--muted); font-size: 14px; font-family: var(--mono); }
+  .knobs { display: grid; gap: 11px; font-size: 16px; }
+  .knobs label { display: grid; grid-template-columns: 110px 1fr 44px; gap: 11px; align-items: center; color: var(--muted); }
+  .knobs input { width: 100%; }
+  .layerrow { display: flex; align-items: center; gap: 11px; padding: 6px 0; font-family: var(--mono); font-size: 16px; max-width: 420px; }
+  .layerrow .sw { width: 11px; height: 11px; border-radius: 2px; }
+  .layerrow .nm { flex: 1; }
+
+  .formbar { display: flex; height: 46px; border-radius: 4px; overflow: hidden; margin: 9px 0; }
+  .formbar div { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 13px; border-right: 1px solid var(--surface); color: #17150f; font-weight: 600; }
+  .varyrow { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 16px; }
+  .varyrow b { font-family: var(--mono); width: 44px; font-weight: 400; font-size: 16px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">arrange <small>battle mode · direction A — stage rail</small></div>
+  <div class="meta">C minor · 4/4 · 168 BPM</div>
+  <div class="mocknav">
+    <a href="index.html">index</a><a class="here" href="a-stage-rail.html">A</a>
+    <a href="b-workbench.html">B</a><a href="c-lineage.html">C</a>
+  </div>
+</div>
+
+<div class="rail" id="rail"></div>
+
+<div class="cols">
+  <div class="panel" id="main"></div>
+  <div>
+    <div class="panel" style="margin-bottom:10px">
+      <p class="side-title">Lineage</p>
+      <div class="tree" id="tree"></div>
+    </div>
+    <div class="panel">
+      <p class="side-title">Pinned takes</p>
+      <div class="pins" id="pins"></div>
+      <div class="note-swap">Clicking a pin crosses over at the next bar line — the loop never breaks.</div>
+    </div>
+  </div>
+</div>
+
+<div class="foot">
+  <button id="back">← back</button>
+  <button class="primary" id="next">continue →</button>
+</div>
+
+<script src="mock.js"></script>
+<script>
+const M = window.MOCK;
+const state = { stage: 'bed', hook: 3, bed: 1, form: 1, u: 0.7, f: 0.3, pins: [1, 2], vary: {} };
+const el = (id) => document.getElementById(id);
+
+function railView() {
+  const order = M.STAGES.map((s) => s.key);
+  const at = order.indexOf(state.stage);
+  el('rail').innerHTML = '';
+  M.STAGES.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = i === at ? 'on' : (i < at ? 'done' : '');
+    const done = i < at ? summary(s.key) : (i === at ? 'choosing…' : '—');
+    b.innerHTML = '<span class="k">' + (i < at ? '✓ ' : '') + s.label + '</span><span class="v">' + done + '</span>';
+    b.onclick = () => { state.stage = s.key; render(); };
+    el('rail').appendChild(b);
+  });
+}
+
+function summary(k) {
+  if (k === 'hook') { const h = M.HOOKS.find((x) => x.id === state.hook); return h.name + ' · ' + h.scheme; }
+  if (k === 'bed') return M.BEDS.find((x) => x.id === state.bed).prog;
+  if (k === 'mood') return M.moodText(state.u, state.f).name;
+  if (k === 'form') return M.FORMS.find((x) => x.id === state.form).label;
+  return 'per-recurrence';
+}
+
+function cardGrid(items, selId, onPick, linesFor, sub) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cards';
+  items.forEach((it) => {
+    const c = document.createElement('div');
+    c.className = 'card' + (it.id === selId ? ' sel' : '');
+    c.onclick = () => onPick(it.id);
+    c.innerHTML = '<div class="card-head"><span class="t">' + (it.name || it.prog) + '</span>'
+      + '<button class="icon" title="pin">☆</button></div><div class="roll"></div>'
+      + '<small>' + sub(it) + '</small>';
+    wrap.appendChild(c);
+    M.paint(c.querySelector('.roll'), linesFor(it), [0.25, 0.5, 0.75], null);
+    c.querySelector('button').onclick = (e) => {
+      e.stopPropagation();
+      if (!state.pins.includes(it.id)) state.pins.push(it.id);
+      render();
+    };
+  });
+  return wrap;
+}
+
+function render() {
+  railView();
+  const m = el('main');
+  m.innerHTML = '';
+  const head = document.createElement('div');
+  m.appendChild(head);
+
+  if (state.stage === 'hook') {
+    head.innerHTML = '<h2><span class="no">01</span>Hook</h2><p class="hint">A short cell and how it restates. Everything after this is built on the one you pick.</p>';
+    m.appendChild(cardGrid(M.HOOKS, state.hook, (id) => { state.hook = id; render(); },
+      (h) => M.hookLines(h.id * 11), (h) => h.scheme + ' · ' + h.detail));
+  }
+
+  if (state.stage === 'bed') {
+    head.innerHTML = '<h2><span class="no">02</span>Bed — 16 bars</h2><p class="hint">Same hook in all six. You are choosing the arrangement around it, not a different tune.</p>';
+    m.appendChild(cardGrid(M.BEDS, state.bed, (id) => { state.bed = id; render(); },
+      (b) => M.bandLines(b.id * 7), (b) => b.desc));
+    const more = document.createElement('button');
+    more.className = 'small';
+    more.style.marginTop = '10px';
+    more.textContent = '⟳ six more like the selected one';
+    m.appendChild(more);
+  }
+
+  if (state.stage === 'mood') {
+    head.innerHTML = '<h2><span class="no">03</span>Mood</h2><p class="hint">Drag the pad and the arrangement deforms live. Check all four corners before moving on.</p>';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap';
+    const pad = document.createElement('div');
+    pad.className = 'pad';
+    pad.innerHTML = '<span class="ax" style="left:6px;top:4px">winning</span>'
+      + '<span class="ax" style="left:6px;bottom:4px">losing</span>'
+      + '<span class="ax" style="right:6px;bottom:4px">urgent →</span><div class="dot"></div>';
+    const dot = pad.querySelector('.dot');
+    const place = () => { dot.style.left = (state.u * 100) + '%'; dot.style.top = ((1 - state.f) * 100) + '%'; };
+    place();
+    const drag = (e) => {
+      const r = pad.getBoundingClientRect();
+      state.u = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      state.f = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+      place(); info();
+    };
+    pad.onmousedown = (e) => { drag(e); pad.onmousemove = drag; };
+    window.addEventListener('mouseup', () => { pad.onmousemove = null; });
+    row.appendChild(pad);
+
+    const side = document.createElement('div');
+    side.style.flex = '1';
+    side.style.minWidth = '260px';
+    row.appendChild(side);
+    const info = () => {
+      const t = M.moodText(state.u, state.f);
+      side.innerHTML = '<div style="font-family:var(--mono);font-size:12px;margin-bottom:2px">' + t.name + '</div>'
+        + '<div class="hint">' + t.detail + '</div>'
+        + '<div class="knobs">'
+        + '<label>BPM<input type="range" min="120" max="200" value="168"><span>168</span></label>'
+        + '<label>Swing<input type="range" min="0" max="100" value="12"><span>.12</span></label>'
+        + '<label>Climax bar<input type="range" min="1" max="16" value="13"><span>13</span></label>'
+        + '</div><p class="side-title" style="margin-top:12px">Reroll one voice</p>';
+      M.LAYERS.forEach((l) => {
+        const r = document.createElement('div');
+        r.className = 'layerrow';
+        r.innerHTML = '<span class="sw" style="background:' + M.ROLE_COLOR[l.role] + '"></span>'
+          + '<span class="nm">' + l.label + '</span>'
+          + (l.locked ? '<button class="small">🔒 locked</button>' : '<button class="small">⟳ reroll</button>');
+        side.appendChild(r);
+      });
+      const n = document.createElement('div');
+      n.className = 'note-swap';
+      n.textContent = 'Any reroll changes only that voice — the others stay byte-identical.';
+      side.appendChild(n);
+    };
+    info();
+    m.appendChild(row);
+  }
+
+  if (state.stage === 'form') {
+    head.innerHTML = '<h2><span class="no">04</span>Form</h2><p class="hint">Grow 16 bars into a full track. The tag must cadence back into bar 1 so the loop is seamless.</p>';
+    const pick = document.createElement('div');
+    pick.style.marginBottom = '10px';
+    pick.innerHTML = '<button class="small">30s</button> <button class="small primary">60s</button> <button class="small">90s</button>';
+    m.appendChild(pick);
+    M.FORMS.forEach((f) => {
+      const c = document.createElement('div');
+      c.className = 'card' + (f.id === state.form ? ' sel' : '');
+      c.style.marginBottom = '8px';
+      c.onclick = () => { state.form = f.id; render(); };
+      const total = f.sections.reduce((a, s) => a + s[1], 0);
+      const bar = f.sections.map((s, i) => {
+        const c2 = ['var(--drums)', 'var(--melody)', 'var(--melody)', 'var(--winds)', 'var(--brass)', 'var(--bass)'][i % 6];
+        return '<div style="width:' + ((s[1] / total) * 100) + '%;background:' + c2 + '">' + s[0] + '</div>';
+      }).join('');
+      c.innerHTML = '<div class="card-head"><span class="t">Plan ' + f.id + ' · ' + f.label + '</span>'
+        + '<button class="icon">▶</button></div><div class="formbar">' + bar + '</div>'
+        + '<small>' + f.sections.map((s) => s[0] + ' ' + s[1]).join(' · ') + '</small>';
+      m.appendChild(c);
+    });
+  }
+
+  if (state.stage === 'vary') {
+    head.innerHTML = '<h2><span class="no">05</span>Variation</h2><p class="hint">How the hook differs each time it returns. This is the anti-fatigue lever.</p>';
+    [['A', 'as written'], ["A'", 'octave up + thin'], ['B', 'sub-melody in winds'], ['A"', 'brass restatement, climax']].forEach((v) => {
+      const r = document.createElement('div');
+      r.className = 'varyrow';
+      r.innerHTML = '<b>' + v[0] + '</b><select><option>' + v[1] + '</option><option>ornament</option>'
+        + '<option>invert</option><option>thin</option><option>octave up</option></select>'
+        + '<button class="small">⟳</button><button class="small">▶</button>';
+      m.appendChild(r);
+    });
+  }
+
+  const t = document.createElement('div');
+  t.className = 'transport';
+  t.style.marginTop = '14px';
+  t.innerHTML = '<button>▶</button><button>↺</button><div class="bar"><em></em></div><span>0:07 / 0:23</span><span>⟲ loop</span>';
+  m.appendChild(t);
+
+  el('tree').innerHTML = '';
+  const order = M.STAGES.map((s) => s.key);
+  const at = order.indexOf(state.stage);
+  M.STAGES.forEach((s, i) => {
+    if (i > at) return;
+    const d = document.createElement('div');
+    d.className = i === at ? 'on' : '';
+    d.textContent = '  '.repeat(i) + (i ? '└─' : '') + (i === at ? '● ' : '○ ') + s.label + ': ' + summary(s.key);
+    d.title = s.label + ': ' + summary(s.key);
+    d.onclick = () => { state.stage = s.key; render(); };
+    el('tree').appendChild(d);
+  });
+
+  el('pins').innerHTML = '';
+  state.pins.forEach((p) => {
+    const d = document.createElement('div');
+    d.className = 'pin';
+    d.innerHTML = '<b>Take ' + p + '</b><span>×</span>';
+    d.querySelector('span').onclick = () => { state.pins = state.pins.filter((x) => x !== p); render(); };
+    el('pins').appendChild(d);
+  });
+
+  el('back').disabled = at === 0;
+  el('next').disabled = at === M.STAGES.length - 1;
+}
+
+el('back').onclick = () => {
+  const o = M.STAGES.map((s) => s.key);
+  state.stage = o[Math.max(0, o.indexOf(state.stage) - 1)];
+  render();
+};
+el('next').onclick = () => {
+  const o = M.STAGES.map((s) => s.key);
+  state.stage = o[Math.min(o.length - 1, o.indexOf(state.stage) + 1)];
+  render();
+};
+render();
+</script>
+</body>
+</html>
