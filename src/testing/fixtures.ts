@@ -1,5 +1,5 @@
 import type { Chord, Genome, Harmony, Meter, Motif, Note, Quality } from '../core/index.js';
-import { PPQ, midi, motif, pc, tick } from '../core/index.js';
+import { NEUTRAL_MOOD, PPQ, midi, motif, pc, tick } from '../core/index.js';
 import { wholeForm, type GenContext } from '../generate/context.js';
 
 const BAR = PPQ * 4;
@@ -27,7 +27,7 @@ export function fixtureSource(): Motif {
 export function fixtureContext(): GenContext {
   const harmony = fixtureHarmony();
   const meter: Meter = { num: 4, den: 4 };
-  return { harmony, form: wholeForm(harmony), meter, source: fixtureSource() };
+  return { harmony, form: wholeForm(harmony), meter, source: fixtureSource(), mood: NEUTRAL_MOOD };
 }
 
 export function fixtureGenome(over: Partial<Genome> = {}): Genome {
@@ -36,6 +36,7 @@ export function fixtureGenome(over: Partial<Genome> = {}): Genome {
     palette: 'chip-orchestral',
     melody: { seed: 11, ornament: 0.5 },
     bass: { seed: 22, walkiness: 0.6, register: 0 },
+    tenor: { seed: 66, motion: 'pedal', presence: 0.6 },
     drums: { seed: 33, fillDensity: 0.5, swing: 0.3 },
     winds: { seed: 44, activity: 0.6 },
     brass: { seed: 55, voicing: 'drop2', density: 0.7 },

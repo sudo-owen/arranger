@@ -5,11 +5,11 @@ import { TIMBRES, drumVoice, velocityGain } from '../core/index.js';
  * The WebAudio renderer for the timbre table in `core/timbre.ts` (spec §9.2).
  *
  * SHARED between song-creatr's transport and munch's battle music — this package is
- * vendored into the game alongside the engine. It held no tone decisions even before
- * that (every number comes from the table), but the node graph itself used to be
- * written out twice, and the copies drifted three ways: the noise buffer length, the
- * master gain, and whether per-role layer gains were applied at all. The claim that
- * "what you audition is what ships" only holds if one file makes the sound.
+ * vendored into the game alongside the engine. Holding no tone decisions is not enough
+ * (every number comes from the table); the node graph itself has to be written once, or
+ * the two copies drift on the noise buffer length, the master gain and whether per-role
+ * layer gains are applied at all. "What you audition is what ships" only holds if one
+ * file makes the sound.
  *
  * It needs DOM lib for `AudioContext`, so it lives outside the DOM-free engine — but it
  * touches no `document` and no `window`, and stays headless-testable.
@@ -92,8 +92,8 @@ export function scheduleVoice(
   }
 
   // ── envelope ──
-  // The release lands INSIDE the notated duration, so a note ends when it says it
-  // does. Releasing past the end (as this used to) smears every loop seam.
+  // The release lands INSIDE the notated duration, so a note ends when it says it does.
+  // A release that runs past the end smears every loop seam.
   const attack = Math.min(t.attackSec, durSec * 0.5);
   const peak = t.peak * velocityGain(velocity);
   const sustain = peak * t.sustain;

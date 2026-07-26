@@ -12,8 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "vitest bench --run",
-    "vendor:engine": "node scripts/vendor-engine.mjs",
-    "vendor:check": "node scripts/vendor-engine.mjs --check"
+    "ship": "vitest run src/themes.test.ts && node scripts/publish.mjs",
+    "ship:check": "node scripts/publish.mjs --check"
   },
   "devDependencies": {
     "fast-check": "^3.23.2",

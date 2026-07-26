@@ -13,7 +13,7 @@ export function generateBrass(
   g: GenContext, melody: Motif, params: Genome['brass'], rng: Rng, inst: Instrument = BRASS_SECTION,
 ): Motif {
   const notes: Note[] = [];
-  const sounds = (t: Tick): boolean => rng.bool(params.density * (0.25 + intensityAt(g.form, t) * 1.2));
+  const sounds = (t: Tick): boolean => rng.bool(params.density * (0.25 + intensityAt(g.form, t, g.mood) * 1.2));
   const stack = (start: number, dur: number, pitches: readonly Midi[], vel: number): void => {
     for (const p of pitches) {
       notes.push({ start: tick(start), duration: tick(dur), pitch: fitToRange(p, inst), velocity: vel });

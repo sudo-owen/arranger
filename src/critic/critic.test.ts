@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { BRASS_SECTION, OBOE, PULSE_LEAD, PPQ, WIND_SECTION, midi, motif, specFor, tick } from '../core/index.js';
+import { BRASS_SECTION, OBOE, PPQ, PULSE_LEAD, ROLE_ORDER, WIND_SECTION, midi, motif, pc, specFor, tick } from '../core/index.js';
 import type { Instrument, Motif, Note } from '../core/index.js';
 import { arrange } from '../generate/index.js';
 import { fixtureContext, fixtureGenome } from '../testing/index.js';
-import { featureVector, isValid, selectDiverse, violations } from './critic.js';
+import { featureVector, isValid, loopSeamProblems, selectDiverse, violations } from './critic.js';
 import { cosine } from '../theory/index.js';
 
 const G = fixtureContext();
@@ -70,7 +70,7 @@ describe('voice classes', () => {
   });
 
   it('gives the brass section a real spec rather than letting it fall through the lookup', () => {
-    // It used to escape every check only because the name was missing from the table.
+    // A name missing from the table escapes every check, exemption by accident.
     const brass = specFor(BRASS_SECTION);
     expect(brass).not.toBeNull();
     expect(brass!.section).toBe(true);
@@ -95,7 +95,7 @@ describe('voice classes', () => {
 describe('diversity selection (§7.6)', () => {
   it('feature vectors are fixed-length; cosine self-similarity is 1', () => {
     const v = featureVector(arr);
-    expect(v.length).toBe(18);
+    expect(v.length).toBe(12 + ROLE_ORDER.length + 1); // pitch-class histogram, per-role density, mean interval
     expect(cosine(v, v)).toBeCloseTo(1, 6);
   });
 
@@ -105,5 +105,42 @@ describe('diversity selection (§7.6)', () => {
     expect(picked.length).toBe(3);
     expect(picked[0]).toBe(0); // highest score leads
     expect(new Set(picked).size).toBe(3);
+  });
+});
+
+describe('the loop seam is measured at the return point', () => {
+  const meter = { num: 4, den: 4 };
+  const bar = PPQ * 4;
+
+  it('judges the harmonic join against the chord playback returns to', () => {
+    // With an intro that plays once, the last chord leads back to the top of the BODY,
+    // not to bar 1 — checking bar 1 tests a join the listener never hears.
+    const chord = (root: number) => ({ root: pc(root), quality: 'min' as const });
+    const events = [
+      { start: tick(0), duration: tick(bar), chord: chord(0) },     // intro, played once
+      { start: tick(bar), duration: tick(bar), chord: chord(9) },   // loop body starts here
+      { start: tick(2 * bar), duration: tick(bar), chord: chord(4) }, // ...and ends on E
+    ];
+    const withHarmony = {
+      ...arr,
+      length: tick(3 * bar),
+      harmony: { ...arr.harmony, events, length: tick(3 * bar) },
+      tracks: [],
+    };
+    // E -> A is a fifth: fine. E -> C (bar 1) is not, and is what the old check measured.
+    expect(loopSeamProblems(withHarmony, meter, bar)).toEqual([]);
+    expect(loopSeamProblems(withHarmony, meter, 0).some((p) => p.includes('lead back'))).toBe(true);
+  });
+
+  it('only flags a final crash when the return point has one to collide with', () => {
+    const crashes = (starts: number[]) => ({
+      ...arr,
+      length: tick(2 * bar),
+      tracks: [{ role: 'drums' as const, motif: motif(starts.map((st) => (
+        { start: tick(st), duration: tick(30), pitch: midi(49), velocity: 100 })), tick(2 * bar)) }],
+    });
+    expect(loopSeamProblems(crashes([0, 2 * bar - 100]), meter, 0).some((p) => p.includes('crash'))).toBe(true);
+    // Same final crash, but the return point is a bar in and has no crash of its own.
+    expect(loopSeamProblems(crashes([0, 2 * bar - 100]), meter, bar).some((p) => p.includes('crash'))).toBe(false);
   });
 });

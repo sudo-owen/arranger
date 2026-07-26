@@ -1,15 +1,20 @@
 :root {
-  --surface: #11110f;
-  --panel: #181816;
-  --panel-2: #20201d;
-  --roll-bg: #0d0d0c;
-  --border: #3a3a33;
-  --border-hi: #5c5b51;
-  --text: #f5f2ea;
-  --muted: #b8b5aa;
+  /* Graphite blue, desaturated — cool neutrals under a warm accent, so the surface has
+     a temperature rather than being black. Chroma stays low: this is a workstation, and
+     the saturated colour in the window belongs to the six voices. */
+  --surface: #101317;
+  --panel: #171b21;
+  --panel-2: #1e232a;
+  --roll-bg: #0b0e11;
+  --border: #313842;
+  --border-hi: #4e5765;
+  --text: #eef1f5;
+  --muted: #a6adb9;
   --accent: #dcc57a;
-  --accent-soft: #33301f;
+  --accent-soft: #2b2a21;
   --warn: #c86f5b;
+  --cool: #6f8fa8;      /* a second, quieter accent for state that is not a call to action */
+  --cool-soft: #1b242c;
   --display: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --serif: "Bodoni Moda", Georgia, serif;
   --mono: "DM Mono", ui-monospace, monospace;
@@ -63,7 +68,36 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .1em; text-tr
 .hint em { color: var(--text); font-style: normal; }
 .side-title { margin: 0 0 10px; color: var(--muted); font-size: 14px; letter-spacing: .1em; text-transform: uppercase; }
 .controls { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-.foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* ── stage navigation, pinned to the window edges ────────────────────── */
+/* The two moves that are always available are always in the same place, whatever the
+   panel is doing and however far it has scrolled. On a wide window they sit in the
+   gutter beside the app; on a narrow one they tuck against the edge. */
+.nav-edge {
+  position: fixed; top: 50%; z-index: 30; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: 72px; padding: 20px 8px;
+  font-family: var(--display); font-size: 13px; letter-spacing: .06em; text-transform: uppercase;
+  transition: opacity .15s, background .15s, border-color .15s;
+}
+.nav-edge span { font-size: 12px; letter-spacing: .02em; text-align: center; }
+.nav-edge.left { left: 0; border-left: 0; border-radius: 0 var(--r) var(--r) 0; }
+.nav-edge.right { right: 0; border-right: 0; border-radius: var(--r) 0 0 var(--r); }
+.nav-edge:disabled { opacity: .22; }
+@media (max-width: 1180px) {
+  .nav-edge { width: 42px; padding: 14px 6px; font-size: 12px; }
+  .nav-edge span { display: none; }
+}
+
+/* ── top menu ───────────────────────────────────────────────────────── */
+.topmenu { display: flex; align-items: center; gap: 10px; }
+
+/* ── export, at the end of the flow ─────────────────────────────────── */
+.export-block { margin-top: 22px; padding: 16px 18px; border: 1px solid var(--border-hi); border-radius: var(--r); background: var(--cool-soft); }
+.export-block .side-title { margin-top: 0; }
+.export-block .hint { margin-bottom: 0; }
+
+.roll.scrub { cursor: ew-resize; }
 
 /* ── controls ───────────────────────────────────────────────────────── */
 button { border: 1px solid var(--border-hi); border-radius: 6px; font-family: var(--display); font-size: 16px; cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
@@ -183,6 +217,16 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .layerrow { display: flex; align-items: center; gap: 11px; max-width: 430px; padding: 6px 0; font-family: var(--mono); font-size: 16px; }
 .layerrow .sw { width: 11px; height: 11px; border-radius: 2px; flex: none; }
 .layerrow .nm { flex: 1; }
+
+/* One row per voice: colour, name, live mix, and how far the pad has moved it. */
+.voicerow { display: grid; grid-template-columns: 11px 62px minmax(56px, 1fr) 52px auto; align-items: center; gap: 11px; max-width: 430px; padding: 5px 0; font-family: var(--mono); font-size: 15px; }
+.voicerow .sw { width: 11px; height: 11px; border-radius: 2px; }
+.voicerow .meter { height: 5px; border-radius: 999px; background: var(--border-hi); overflow: hidden; }
+.voicerow .meter i { display: block; width: 100%; height: 100%; border-radius: 999px; transition: width .09s linear; }
+.voicerow .delta { color: var(--muted); font-size: 14px; text-align: right; }
+.voicerow .delta.up { color: var(--accent); }
+.voicerow .delta.down { opacity: .55; }
+.voicerow button { padding: 3px 9px; font-size: 13px; }
 .notice { margin-top: 12px; padding: 10px 13px; border-left: 2px solid var(--accent); color: var(--muted); font-size: 15px; background: var(--accent-soft); }
 
 .status { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-family: var(--mono); font-size: 15px; }
@@ -203,7 +247,25 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 
 /* ── mood pad ───────────────────────────────────────────────────────── */
 .mood-row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 16px; }
-.pad { position: relative; width: 280px; height: 280px; flex: none; border: 1px solid var(--border-hi); border-radius: var(--r); background: var(--roll-bg); cursor: crosshair; touch-action: none; }
+/* The field itself, rather than a black square with a dot on it: urgency warms left to
+   right, fortune lifts bottom to top. It makes the axes readable without labels and puts
+   the one large empty surface in the app to work. */
+.pad {
+  position: relative; width: 280px; height: 280px; flex: none;
+  border: 1px solid var(--border-hi); border-radius: var(--r);
+  cursor: crosshair; touch-action: none;
+  background:
+    radial-gradient(120% 100% at 100% 0%, rgba(220, 197, 122, .22), transparent 62%),
+    radial-gradient(120% 100% at 0% 100%, rgba(111, 143, 168, .20), transparent 60%),
+    linear-gradient(to top, rgba(200, 111, 91, .13), transparent 70%),
+    var(--roll-bg);
+}
+.pad::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background:
+    linear-gradient(to right, transparent calc(50% - 1px), rgba(238, 241, 245, .07) 50%, transparent calc(50% + 1px)),
+    linear-gradient(to bottom, transparent calc(50% - 1px), rgba(238, 241, 245, .07) 50%, transparent calc(50% + 1px));
+}
 .pad .dot { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--accent); pointer-events: none; }
 .pad-frame { display: grid; grid-template-columns: 280px auto; gap: 4px 10px; align-items: center; }
 .pad-frame .ax { color: var(--muted); font-family: var(--mono); font-size: 14px; }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Motif } from '../core/index.js';
-import { NEUTRAL_MOOD, PPQ, barTicks, sliceAt } from '../core/index.js';
+import { NEUTRAL_MOOD, PPQ, barTicks, sliceAt, tick } from '../core/index.js';
 import { BPM, KEY, LENGTHS, METER, TEMPOS, fixtureGenome, problemsFor, testHooks, track } from '../testing/index.js';
 import { CONTOUR_FLOOR, contourSimilarity } from '../theory/index.js';
 import { FORM_SHAPES, barsForSeconds, planForm } from './form.js';
@@ -42,7 +42,7 @@ describe('treatments', () => {
   });
 
   it('every one but as-written actually changes something', () => {
-    const whole = { sections: FORM.sections.slice(0, 1), template: FORM.template };
+    const whole = { sections: FORM.sections.slice(0, 1), template: FORM.template, loopStart: tick(0) };
     for (const t of TREATMENTS) {
       const varied = vary({ [whole.sections[0]!.label]: t.id }, whole);
       const drift = driftAt(SOURCE, varied, whole.sections[0]!);
@@ -175,13 +175,13 @@ describe('a variation survives the round trip to song.json', () => {
 
 describe('varySource on a formless track', () => {
   it('treats the whole span as one section', () => {
-    const whole = { sections: [{ label: 'A' as const, start: FORM.sections[0]!.start, length: SOURCE.length, mood: NEUTRAL_MOOD }], template: 'sentence' as const };
+    const whole = { sections: [{ label: 'A' as const, start: FORM.sections[0]!.start, length: SOURCE.length, mood: NEUTRAL_MOOD }], template: 'sentence' as const, loopStart: tick(0) };
     const varied = varySource(SOURCE, whole, { A: 'octave-up' }, HARMONY, METER, GENOME);
     expect(varied.notes.every((n, i) => n.pitch === SOURCE.notes[i]!.pitch + 12)).toBe(true);
   });
 
   it('returns the source untouched when there are no sections at all', () => {
-    expect(varySource(SOURCE, { sections: [], template: 'sentence' }, { A: 'thinned' }, HARMONY, METER, GENOME)).toBe(SOURCE);
+    expect(varySource(SOURCE, { sections: [], template: 'sentence', loopStart: tick(0) }, { A: 'thinned' }, HARMONY, METER, GENOME)).toBe(SOURCE);
   });
 });
 

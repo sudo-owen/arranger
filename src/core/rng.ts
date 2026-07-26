@@ -17,8 +17,8 @@ export interface Rng {
   /**
    * A fresh, independent stream derived from a LABEL, not from the running state.
    *
-   * This is the §8.2 correctness fix. ornament() draws a variable number of randoms
-   * depending on how many notes it adds. If a child stream were derived from the
+   * §8.2. ornament() draws a variable number of randoms depending on how many notes
+   * it adds. If a child stream were derived from the
    * parent's mutated state, changing ornament's density would silently rerandomise
    * every later role — the user nudges one slider and a variation they liked
    * evaporates. Seeding from hash(seed0, label) makes each stream a pure function of

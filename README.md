@@ -15,8 +15,8 @@ npm run dev        # Vite dev server — open the printed URL
 npm run build      # typecheck (both boundaries) + production bundle -> dist/
 npm test           # unit / property / golden tests
 npm run typecheck  # tsc over the pure packages, then the app layer
-npm run vendor:engine  # copy the DOM-free engine into munch
-npm run vendor:check   # fail if munch's copy has drifted
+npm run ship       # validate themes, then publish engine + themes into munch
+npm run ship:check # fail if munch has drifted from this repo
 ```
 
 ## The flow
@@ -35,8 +35,9 @@ Five stages, one choice each:
    multiple of the progression, so the loop joins cleanly.
 5. **Vary** — how the hook differs on each return. Phase 5.
 
-MIDI import and hand-editing the inferred chord progression live in the **Advanced**
-drawer. `PLAN-battle-mode.md` tracks what is built and what is next.
+Importing a MIDI skips the generative half: the file is arranged over its own inferred
+harmony and opens at the Mood pad, to hear how someone else's tune moves. Hand-editing the
+inferred chords lives in the **Advanced** drawer. `PLAN-battle-mode.md` tracks what is built and what is next.
 
 ## Architecture
 
@@ -67,10 +68,16 @@ Two layers, enforced by two tsconfigs.
 - **`app`** — vanilla-TS UI: a single `Store`, the stage rail, a role-coloured canvas
   piano-roll, snapshot-based branching history, and a pin tray.
 
-**Shipping to the game.** `song.json` is a `SongSpec` — hook, genome, tempo, ~3 KB — and
-`renderSong(spec, mood)` rebuilds the arrangement at any point in the mood square. munch
-vendors the engine (`npm run vendor:engine`) and calls that directly, so the game ships a
-few hundred bytes instead of a bank of stems, and hears exactly what was auditioned here.
+**Shipping to the game.** munch authors no music: it pulls a strict subset of this repo.
+Themes live in `themes/` as `SongSpec` files — hook, genome, tempo, ~3 KB — and
+`renderSong(spec, mood)` rebuilds the arrangement at any point in the mood square, so the
+game ships a few hundred bytes instead of a bank of stems.
+
+The loop is: export `song.json` from the app → drop it in `themes/` → `npm run ship`. That
+validates every theme against the current engine (`src/themes.test.ts`), then copies the
+engine and the themes into munch under a single hash, with an `index.json` naming them.
+Engine and themes move together on purpose — they drift in opposite directions and both
+breaks are silent, so `ship:check` fails if either half is stale.
 
 Two inversions worth knowing. Harmony is **owned**, not inferred — it comes from a
 chosen progression, and the melody is generated against it. And instruments constrain
@@ -79,11 +86,16 @@ real BPM afterwards, and `GENERATION_REF_BPM` names the one assumption generatio
 
 ## Design
 
-Five orchestral roles → five hues, reused across the legend, chord strip, piano-rolls
+Six orchestral roles → six hues, reused across the legend, chord strip, piano-rolls
 and cards, so colour encodes voice everywhere. Graphite-blue workstation surface;
 Instrument Sans for display, DM Mono for data, Bodoni Moda for the wordmark.
 
 ## Not yet built
+
+Multi-track MIDI import. `parseMidi` merges every track into one melody line and drops
+program changes, so an imported file arrives as a tune rather than an arrangement — the
+export side already stamps GM programs and `timbreForProgram` already reads them back, so
+the round trip is half-built. Needs per-track notes out of the parser.
 
 The two harmonic hard-rejects that need voice separation (§7.5); per-recurrence
 variation chains (Phase 5); mapping real battle state onto the mood axes, and flipping

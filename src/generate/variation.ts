@@ -249,7 +249,7 @@ export const isStraight = (plan: VariationPlan | undefined): boolean =>
  * Runs BEFORE `arrange`, on the source rather than on the written melody, so every
  * downstream role answers the variation rather than the statement: winds fill the gaps
  * a thinned section opens, brass harmonises the line that is actually there. Treating
- * the melody track afterwards would leave the other four voices playing to a tune that
+ * the melody track afterwards would leave every other voice playing to a tune that
  * is no longer sounding.
  */
 export function varySource(

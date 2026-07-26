@@ -41,22 +41,3 @@ export function tileTo(m: Motif, target: Tick): Motif {
   }
   return motif(notes, target);
 }
-
-export function mapNotes(m: Motif, fn: (n: Note) => Note): Motif {
-  return motif(m.notes.map(fn), m.length);
-}
-
-export function withNotes(m: Motif, notes: readonly Note[]): Motif {
-  return motif(notes, m.length);
-}
-
-export function assertMotif(m: Motif): void {
-  for (let i = 1; i < m.notes.length; i++) {
-    const prev = m.notes[i - 1];
-    const cur = m.notes[i];
-    if (prev === undefined || cur === undefined) continue;
-    if (cur.start < prev.start) {
-      throw new Error(`Motif not sorted by start at index ${i}`);
-    }
-  }
-}

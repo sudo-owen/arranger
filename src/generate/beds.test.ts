@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Palette } from '../core/index.js';
-import { PALETTES, PALETTE_ORDER, PPQ } from '../core/index.js';
+import { PALETTES, PALETTE_ORDER, PPQ, specFor } from '../core/index.js';
 import { contourSimilarity, CONTOUR_FLOOR } from '../theory/index.js';
 import { TEMPOS, notesOf, problemsFor, testHooks, track, variedGenome } from '../testing/index.js';
 
@@ -23,8 +23,8 @@ describe('beds over a hook', () => {
   });
 
   it('preserves the hook: the written melody stays kin to the source', () => {
-    // The regression that motivated the sixteenth grid — beat-snapping collapsed a
-    // sixteenth-note hook onto four onsets a bar and blew straight through the floor.
+    // What the sixteenth grid is for: beat-snapping collapses a sixteenth-note hook
+    // onto four onsets a bar and takes it straight through the contour floor.
     for (const hook of hooks) {
       const t = track({ hook, genome: variedGenome(1) });
       const melody = t.arr.tracks.find((x) => x.role === 'melody')!.motif;
@@ -65,22 +65,28 @@ describe('beds over a hook', () => {
     const hook = hooks[1]!;
     const a = track({ hook, palette: 'full-chip', genome: variedGenome(2) });
     const b = track({ hook, palette: 'chip-orchestral', genome: variedGenome(2) });
-    for (const role of ['melody', 'bass', 'drums'] as const) {
+    // Tenor is in this list because `PULSE_TENOR` and `HORN_SECTION` are given the same
+    // window: matched ranges mean `fitToRange` folds identically, so the chip and the
+    // acoustic tenor differ in timbre and in nothing else.
+    for (const role of ['melody', 'bass', 'tenor', 'drums'] as const) {
       expect(notesOf(a, role), role).toEqual(notesOf(b, role));
     }
     expect(a.arr.tracks.find((x) => x.role === 'winds')!.instrument!.class).toBe('chip');
     expect(b.arr.tracks.find((x) => x.role === 'winds')!.instrument!.class).toBe('acoustic');
   });
 
-  it('always writes the bass on triangle, and the lead on chip unless a section carries it', () => {
-    // Bass stays forced — a line on every beat for a whole track is beyond any lungs.
-    // The lead is no longer forced: phrasing, sections and the ornament clamp between
-    // them make a wind lead playable at battle tempo.
-    for (const palette of PALETTE_ORDER) expect(PALETTES[palette].bass.name).toBe('tri bass');
-    expect(PALETTES['winds-lead'].melody.name).toBe('winds');
-    expect(PALETTES['winds-lead'].melody.class).toBe('acoustic');
-    for (const p of PALETTE_ORDER.filter((x) => x !== 'winds-lead')) {
-      expect(PALETTES[p].melody.class, p).toBe('chip');
+  it('never puts a soloist on a continuous line — bass, tenor and lead are chip or a section', () => {
+    // The bass plays a note per beat for the whole track and the tenor holds under it,
+    // so neither can be one player with one pair of lungs. Chip voices have neither;
+    // sections stagger their breathing. Anything else is a card that cannot generate.
+    for (const palette of PALETTE_ORDER) {
+      for (const role of ['bass', 'tenor', 'melody'] as const) {
+        const inst = PALETTES[palette][role];
+        expect(inst.class === 'chip' || specFor(inst)?.section === true, `${palette}/${role}: ${inst.name}`)
+          .toBe(true);
+      }
     }
+    expect(PALETTES['deep-brass'].bass.name).toBe('low brass');
+    expect(PALETTES['winds-lead'].melody.name).toBe('winds');
   });
 });

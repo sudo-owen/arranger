@@ -4,10 +4,14 @@ import { barTicks } from '../core/index.js';
 export const ROLE_COLORS: Readonly<Record<Role, string>> = {
   melody: '#d4a452',
   bass: '#7588c5',
+  tenor: '#8b6fae',
   drums: '#9a9a91',
   winds: '#68a698',
   brass: '#c86f5b',
 };
+
+/** Kept in step with `--roll-bg`; the canvas needs a concrete value either way. */
+const ROLL_BG = '#0b0e11';
 
 interface RollNote { start: number; duration: number; pitch: number; velocity: number }
 export interface Line { notes: readonly RollNote[]; color: string }
@@ -16,7 +20,43 @@ export const linesOf = (arr: Arrangement): Line[] =>
   arr.tracks.map((t) => ({ notes: t.motif.notes, color: ROLE_COLORS[t.role] }));
 export const lineOf = (m: Motif, color: string): Line[] => [{ notes: m.notes, color }];
 
-export function drawRoll(canvas: HTMLCanvasElement, lines: Line[], length: number, meter: Meter, playPos?: number, lenSec?: number): void {
+export interface PitchRange { lo: number; hi: number }
+
+/**
+ * Every field is explicitly `| undefined`: `exactOptionalPropertyTypes` is on, and each of
+ * these is computed at the call site from something that may not exist yet — a playhead
+ * only while playing, a range only once a grid has notes in it.
+ */
+export interface RollOptions {
+  playPos?: number | undefined;
+  lenSec?: number | undefined;
+  /**
+   * A pitch range shared across a set of canvases.
+   *
+   * Without it each roll scales to its own contents, which is right for a single roll and
+   * wrong for a grid: a hook spanning three semitones and one spanning two octaves both
+   * fill the box, and two cards with the same contour in different registers draw
+   * identically. In a grid whose whole purpose is comparison, the most legible visual
+   * channel then encodes nothing.
+   */
+  range?: PitchRange | undefined;
+}
+
+/** The span covering every line in every set — one scale for a whole card grid. */
+export function sharedRange(sets: readonly (readonly Line[])[]): PitchRange | undefined {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const set of sets) for (const l of set) for (const n of l.notes) {
+    lo = Math.min(lo, n.pitch);
+    hi = Math.max(hi, n.pitch);
+  }
+  return Number.isFinite(lo) ? { lo, hi } : undefined;
+}
+
+export function drawRoll(
+  canvas: HTMLCanvasElement, lines: Line[], length: number, meter: Meter, opts: RollOptions = {},
+): void {
+  const { playPos, lenSec, range } = opts;
   const g = canvas.getContext('2d');
   if (!g) return;
   const dpr = window.devicePixelRatio || 1;
@@ -27,14 +67,10 @@ export function drawRoll(canvas: HTMLCanvasElement, lines: Line[], length: numbe
     canvas.height = Math.round(h * dpr);
   }
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = '#0d0d0c';
+  g.fillStyle = ROLL_BG;
   g.fillRect(0, 0, w, h);
 
-  let lo = 127;
-  let hi = 0;
-  let any = false;
-  for (const l of lines) for (const n of l.notes) { lo = Math.min(lo, n.pitch); hi = Math.max(hi, n.pitch); any = true; }
-  if (!any) { lo = 48; hi = 84; }
+  let { lo, hi } = range ?? sharedRange([lines]) ?? { lo: 48, hi: 84 };
   lo -= 2; hi += 2;
   const span = Math.max(1, hi - lo);
   const pad = 6;

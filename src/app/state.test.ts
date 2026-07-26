@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { PPQ, midi, motif, tick } from '../core/index.js';
 import { MOOD_CORNERS, arrangeAtMood, renderSong } from '../generate/index.js';
 import { violations } from '../critic/index.js';
-import { Store } from './state.js';
+import { Store, chooseBeds, isFallbackSet } from './state.js';
+import type { Candidate } from './state.js';
 
 /** A store parked on a generated set of arrangements. */
 function seeded(count = 4): Store {
@@ -24,7 +25,7 @@ describe('history is fully restorable', () => {
     store.promoteCurrentMelody();
     expect(store.get().candidates).toHaveLength(0);
 
-    // ...and coming back restores it. This is what used to be silently destroyed.
+    // ...and coming back restores it, arrangements included.
     store.selectEvolution(generateNode.id);
     expect(store.get().candidates).toHaveLength(before.length);
     expect(store.get().candidates[0]?.genome).toBe(before[0]?.genome);
@@ -81,13 +82,23 @@ describe('pinned takes', () => {
 });
 
 describe('debt: harmony ownership, history roots, corner-safe beds', () => {
-  it('offers only beds that survive all four mood corners', () => {
+  it('offers only beds that survive all four mood corners, or flags that it could not', () => {
     const store = seeded(6);
     const source = store.get().source!;
+    if (isFallbackSet(store.get().candidates)) {
+      // Nothing passed, so the least-bad were shown rather than an empty stage. The set
+      // is flagged and the status says why — that is the whole of the weaker contract.
+      expect(store.get().status).toMatch(/None passed the critic/);
+      expect(store.get().candidates.length).toBeGreaterThan(0);
+      return;
+    }
     for (const c of store.get().candidates) {
       for (const { mood, label } of MOOD_CORNERS) {
         const at = arrangeAtMood(source, store.get().key!, store.get().meter, 4, c.genome, c.progression, mood);
-        expect(violations(at.arr, source, store.get().bpm), label).toEqual([]);
+        // Against `at.arr.source`, not the raw hook: at a corner `variationForMood` varies
+        // the source the melody is generated from, so measuring contour kinship against
+        // the unvaried hook counts the deliberate variation as drift.
+        expect(violations(at.arr, at.arr.source, store.get().bpm), label).toEqual([]);
       }
     }
   });
@@ -117,7 +128,7 @@ describe('debt: harmony ownership, history roots, corner-safe beds', () => {
     const pitches = [60, 62, 64, 65, 67, 65, 64, 62];
     store.loadSource(
       motif(pitches.map((p, i) => ({ start: tick(i * q), duration: tick(q), pitch: midi(p), velocity: 96 })), tick(8 * q)),
-      120, { num: 4, den: 4 }, 'test import', 'import',
+      120, { num: 4, den: 4 }, 'test import',
     );
     const inferred = store.get().harmony!.events.map((e) => e.chord.root);
     store.generateBeds(2);
@@ -142,9 +153,9 @@ describe('a committed variation reaches every path that builds an arrangement', 
   }
 
   it('rerolling one voice still leaves the others byte-identical', () => {
-    // `contextFor` used to re-derive the varied source with a hardcoded seed while the
-    // shared pipeline used the melody seed, so every reroll silently rewrote the melody
-    // it was supposed to leave alone — §8.2's whole promise, lost under a variation.
+    // `contextFor` must derive the varied source through the shared pipeline, on the
+    // melody seed: a second derivation on any other seed rewrites the melody a reroll is
+    // supposed to leave alone, and takes §8.2's promise down with it.
     const store = varied();
     const before = store.get().candidates[0]!.arr;
     store.rerollVoice('drums');
@@ -170,5 +181,34 @@ describe('a committed variation reaches every path that builds an arrangement', 
     const rebuilt = renderSong(JSON.parse(JSON.stringify(spec)) as typeof spec, store.get().mood);
     expect(rebuilt.tracks.map((t) => t.motif.notes))
       .toEqual(store.get().candidates[0]!.arr.tracks.map((t) => t.motif.notes));
+  });
+});
+
+describe('chooseBeds', () => {
+  const cand = (n: number, problems?: string[]): Candidate =>
+    ({ genome: null as never, arr: { length: n } as never, progression: null, ...(problems ? { problems } : {}) });
+
+  it('prefers clean candidates, and a clean set is not a fallback', () => {
+    const got = chooseBeds([cand(1), cand(2)], [cand(9, ['x'])], 6);
+    expect(got).toHaveLength(2);
+    expect(isFallbackSet(got)).toBe(false);
+  });
+
+  it('shows the least-bad rather than an empty grid when nothing passed', () => {
+    // The failure this pins: `generateBeds` used to return early with candidates
+    // untouched, so the Mood stage read "Pick a bed first" while the real reason —
+    // for a real MIDI, "melody: contour similarity below 0.5" — sat in the footer.
+    const got = chooseBeds([], [
+      cand(3, ['a', 'b', 'c']),
+      cand(1, ['a']),
+      cand(2, ['a', 'b']),
+    ], 2);
+    expect(got.map((c) => c.arr.length)).toEqual([1, 2]); // fewest problems first
+    expect(isFallbackSet(got)).toBe(true);
+  });
+
+  it('reports no fallback when there is nothing at all to salvage', () => {
+    expect(chooseBeds([], [], 6)).toEqual([]);
+    expect(isFallbackSet([])).toBe(false);
   });
 });

@@ -20,9 +20,9 @@ import { chordAt, type GenContext } from '../context.js';
  * notes individually — a constant offset leaves the contour bit-identical, where
  * per-note folding would invent leaps and fail the very floor it is protecting.
  *
- * Melody was the one role that never did this. A descending `answer` over a one-bar
- * cell walks below the lead's floor, and since the whole candidate set shares a melody
- * seed, that sank every bed at once: about one Generate in forty returned nothing.
+ * A descending `answer` over a one-bar cell walks below the lead's floor, and the whole
+ * candidate set shares a melody seed — so an unfitted line does not sink one bed, it
+ * sinks every bed at once.
  */
 function fitLineToRange(notes: readonly Note[], inst: Instrument): Note[] {
   if (!notes.length) return [...notes];

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { KEY, METER, MOOD_GRID, TEMPOS, fixtureGenome, problemsFor, testHooks, track } from '../testing/index.js';
+import { KEY, METER, MOOD_GRID, TEMPOS, fixtureContext, fixtureGenome, problemsFor, testHooks, track, tune, velocities } from '../testing/index.js';
+import type { Arrangement, Motif } from '../core/index.js';
 import { NEUTRAL_MOOD, PALETTE_ORDER, ROLE_ORDER, clampMood, makeRng } from '../core/index.js';
+import { arrange } from './arrange.js';
 import { violations } from '../critic/index.js';
 import { contourSimilarity, CONTOUR_FLOOR } from '../theory/index.js';
 import { generateHookSet, renderHook } from './hook.js';
@@ -10,6 +12,38 @@ import { renderSong } from './song.js';
 import type { SongSpec } from './song.js';
 import { progressionsFor } from './progressions.js';
 
+
+describe('mood reaches the written notes', () => {
+  const G = fixtureContext();
+  const total = (a: Arrangement): number => a.tracks.reduce((n, t) => n + t.motif.notes.length, 0);
+  const at = (urgency: number): Arrangement =>
+    arrange({ ...G, mood: { urgency, fortune: 0.5 } }, fixtureGenome());
+
+  it('moves the generators, not only the genome dials', () => {
+    // `deform` biases the per-role dials, but every generator multiplies its dial by
+    // `intensityAt`. If the mood reached only the dial — the genome held fixed here —
+    // moving the pad from calm to frantic would change nothing at all.
+    expect(total(at(1))).toBeGreaterThan(total(at(0)));
+  });
+
+  it('ramps monotonically across the axis, so a drag is a slope and not a switch', () => {
+    const counts = [0, 0.25, 0.5, 0.75, 1].map((u) => total(at(u)));
+    for (let i = 1; i < counts.length; i++) {
+      expect(counts[i]!, `u=${i * 0.25}`).toBeGreaterThanOrEqual(counts[i - 1]!);
+    }
+    expect(counts.at(-1)!).toBeGreaterThan(counts[0]! * 1.5);
+  });
+
+  it('leaves the hook alone at every point on the axis, but not how it is played', () => {
+    // The one thing the pad must never touch is the tune: `deform` never sees
+    // `melody.seed`, and the melody generator does not read intensity. Its DYNAMICS do
+    // move — a frantic fight plays the same hook harder — which is `shapeDynamics`.
+    const melody = (u: number): Motif['notes'] => at(u).tracks.find((t) => t.role === 'melody')!.motif.notes;
+    expect(tune(melody(1))).toEqual(tune(melody(0)));
+    expect(velocities(melody(1)).reduce((a, b) => a + b, 0))
+      .toBeGreaterThan(velocities(melody(0)).reduce((a, b) => a + b, 0));
+  });
+});
 
 describe('deform', () => {
   it('is the identity at neutral — the authored take passes through untouched', () => {
@@ -158,7 +192,7 @@ describe('neighbours', () => {
   it('changes exactly one field per variant', () => {
     const base = fixtureGenome();
     for (const n of neighbours(base, makeRng(5), 6)) {
-      const differing = (['melody', 'bass', 'drums', 'winds', 'brass'] as const)
+      const differing = ROLE_ORDER
         .filter((k) => JSON.stringify(n.genome[k]) !== JSON.stringify(base[k])).length
         + (n.genome.palette === base.palette ? 0 : 1);
       expect(differing, n.changed).toBeLessThanOrEqual(1);
@@ -173,7 +207,7 @@ describe('neighbours', () => {
   it('returns distinct tweaks, capped at the number available', () => {
     const labels = neighbours(fixtureGenome(), makeRng(7), 6).map((n) => n.changed);
     expect(new Set(labels).size).toBe(labels.length);
-    expect(neighbours(fixtureGenome(), makeRng(8), 99).length).toBeLessThanOrEqual(9);
+    expect(neighbours(fixtureGenome(), makeRng(8), 99).length).toBeLessThanOrEqual(11);
   });
 });
 

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { OBOE, TUBA, barTicks, barsIn, beatTicks, inRange, isChordTone, makeRng, pc } from '../core/index.js';
+import { HORN_SECTION, OBOE, TUBA, barTicks, barsIn, beatTicks, inRange, isChordTone, makeRng, pc } from '../core/index.js';
 import { contourSimilarity } from '../theory/index.js';
 import { chordAt } from './context.js';
 import { generateBass } from './roles/bass.js';
 import { generateMelody } from './roles/melody.js';
+import { generateTenor } from './roles/tenor.js';
 import { generateDrums } from './roles/drums.js';
 import { generateWinds } from './roles/winds.js';
 import { generateBrass } from './roles/brass.js';
@@ -11,6 +12,7 @@ import { fixtureContext, fixtureGenome } from '../testing/index.js';
 
 const G = fixtureContext();
 const GEN = fixtureGenome();
+const BASS = generateBass(G, GEN.bass, makeRng(GEN.bass.seed));
 
 describe('bass generator (§7.4)', () => {
   it('places the chord root on every downbeat', () => {
@@ -33,6 +35,66 @@ describe('bass generator (§7.4)', () => {
   it('stays within a bass instrument range', () => {
     const bass = generateBass(G, GEN.bass, makeRng(GEN.bass.seed));
     for (const n of bass.notes) expect(inRange(n.pitch, TUBA)).toBe(true);
+  });
+});
+
+describe('tenor generator (§7.4 low counter-voice)', () => {
+  const motions = ['pedal', 'drive', 'octaves'] as const;
+  const median = (ps: number[]): number => [...ps].sort((a, b) => a - b)[Math.floor(ps.length / 2)]!;
+
+  it('stays monophonic in every motion — the critic checks nothing on a stack', () => {
+    for (const motion of motions) {
+      const tenor = generateTenor(G, BASS, { seed: 4, motion, presence: 1 }, makeRng(4));
+      for (let i = 1; i < tenor.notes.length; i++) {
+        expect(tenor.notes[i]!.start, `${motion} note ${i}`)
+          .toBeGreaterThanOrEqual(tenor.notes[i - 1]!.start + tenor.notes[i - 1]!.duration);
+      }
+    }
+  });
+
+  it('tracks the bass register instead of doubling it at a fixed centre', () => {
+    // A fixed centre against `register: 1` puts the tenor on 50–60 and the bass on
+    // 47–57 — two voices in one octave doing one voice's job.
+    for (const register of [-1, 0, 1]) {
+      const bass = generateBass(G, { seed: 3, walkiness: 0.5, register }, makeRng(3));
+      const bassMid = median(bass.notes.map((n) => n.pitch));
+      // An octave above the bass, except where that would sustain inside the hook.
+      const centre = Math.min(60, bassMid + 12);
+      for (const motion of motions) {
+        const tenor = generateTenor(G, bass, { seed: 6, motion, presence: 1 }, makeRng(6));
+        const mid = median(tenor.notes.map((n) => n.pitch));
+        expect(tenor.notes.length, `${motion}@${register}`).toBeGreaterThan(0);
+        expect(mid, `${motion}@${register}`).toBeGreaterThan(bassMid);
+        expect(mid, `${motion}@${register}`).toBeGreaterThanOrEqual(centre - 6);
+        for (const n of tenor.notes) {
+          expect(inRange(n.pitch, HORN_SECTION), `${motion}@${register} note ${n.start}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('never sustains past the loop point', () => {
+    for (const motion of motions) {
+      const tenor = generateTenor(G, BASS, { seed: 8, motion, presence: 1 }, makeRng(8));
+      for (const n of tenor.notes) expect(n.start + n.duration, motion).toBeLessThanOrEqual(G.harmony.length);
+    }
+  });
+
+  it('drive lands off the beat, where the bass never writes', () => {
+    const beat = beatTicks(G.meter);
+    const tenor = generateTenor(G, BASS, { seed: 10, motion: 'drive', presence: 1 }, makeRng(10));
+    for (const n of tenor.notes) expect(n.start % beat, `at ${n.start}`).not.toBe(0);
+  });
+
+  it('presence 0 → silent', () => {
+    for (const motion of motions) {
+      expect(generateTenor(G, BASS, { seed: 12, motion, presence: 0 }, makeRng(12)).notes, motion).toEqual([]);
+    }
+  });
+
+  it('is deterministic for a fixed seed', () => {
+    const params = { seed: 14, motion: 'pedal', presence: 0.7 } as const;
+    expect(generateTenor(G, BASS, params, makeRng(14))).toEqual(generateTenor(G, BASS, params, makeRng(14)));
   });
 });
 
@@ -85,8 +147,8 @@ describe('winds generator (§7.4 complementary rhythm)', () => {
   const beat = beatTicks(G.meter);
 
   it('moves where the melody leaves room, and sustains where it does not', () => {
-    // The old contract — "never sounds where the melody has an onset" — silenced this
-    // role outright once hooks arrived: a battle hook has an onset in every beat.
+    // Not "never sounds where the melody has an onset": a battle hook has an onset in
+    // every beat, and that contract silences this role outright.
     const coverage = (from: number, to: number): number => melody.notes
       .reduce((sum, n) => sum + Math.max(0, Math.min(to, n.start + n.duration) - Math.max(from, n.start)), 0) / (to - from);
     for (const w of winds.notes) {

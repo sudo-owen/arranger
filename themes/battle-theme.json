@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "bpm": 168,
+  "meter": {
+    "num": 4,
+    "den": 4
+  },
+  "key": {
+    "tonic": 9,
+    "mode": "minor"
+  },
+  "bars": 44,
+  "hook": {
+    "cell": {
+      "notes": [
+        {
+          "start": 0,
+          "duration": 240,
+          "pitch": 76,
+          "velocity": 104
+        },
+        {
+          "start": 240,
+          "duration": 240,
+          "pitch": 69,
+          "velocity": 88
+        },
+        {
+          "start": 480,
+          "duration": 480,
+          "pitch": 72,
+          "velocity": 88
+        },
+        {
+          "start": 960,
+          "duration": 240,
+          "pitch": 69,
+          "velocity": 104
+        },
+        {
+          "start": 1200,
+          "duration": 240,
+          "pitch": 72,
+          "velocity": 88
+        },
+        {
+          "start": 1440,
+          "duration": 480,
+          "pitch": 76,
+          "velocity": 88
+        },
+        {
+          "start": 1920,
+          "duration": 240,
+          "pitch": 69,
+          "velocity": 104
+        },
+        {
+          "start": 2160,
+          "duration": 240,
+          "pitch": 76,
+          "velocity": 88
+        },
+        {
+          "start": 2400,
+          "duration": 480,
+          "pitch": 72,
+          "velocity": 88
+        },
+        {
+          "start": 2880,
+          "duration": 960,
+          "pitch": 69,
+          "velocity": 104
+        }
+      ],
+      "length": 3840
+    },
+    "scheme": "sequence-down",
+    "rhythm": "gallop",
+    "key": {
+      "tonic": 9,
+      "mode": "minor"
+    },
+    "meter": {
+      "num": 4,
+      "den": 4
+    },
+    "cellBars": 1
+  },
+  "genome": {
+    "version": 1,
+    "palette": "chip-orchestral",
+    "melody": {
+      "seed": 156030877,
+      "ornament": 0.5853018478490413,
+      "radius": 2
+    },
+    "bass": {
+      "seed": 841995992,
+      "walkiness": 0.3873038669116795,
+      "register": 0
+    },
+    "tenor": {
+      "seed": 480221,
+      "motion": "pedal",
+      "presence": 0.45
+    },
+    "drums": {
+      "seed": 281155312,
+      "fillDensity": 0.719223717530258,
+      "swing": 0
+    },
+    "winds": {
+      "seed": 368163343,
+      "activity": 0.3913313974160701,
+      "ornament": 0.03673024277668446
+    },
+    "brass": {
+      "seed": 685951050,
+      "voicing": "close",
+      "density": 0.672412400902249
+    }
+  },
+  "progressionId": "aeolian-vamp",
+  "formTemplate": "arc"
+}

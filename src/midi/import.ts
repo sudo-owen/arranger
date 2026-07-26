@@ -10,7 +10,9 @@ export interface ParsedMidi {
 /**
  * Minimal Standard MIDI File reader (spec §10 Import). Merges all tracks into one
  * melody line and rescales to the engine's PPQ. Handles running status, tempo and
- * time-signature meta events; ignores the rest. Enough to get a tune in.
+ * time-signature meta events; ignores the rest. Enough to get a tune in — but not enough
+ * to get an ARRANGEMENT in: the merge is what makes per-track instrumentation
+ * unrecoverable, whatever the program-change bytes said.
  */
 export function parseMidi(buffer: ArrayBuffer): ParsedMidi {
   const dv = new DataView(buffer);
@@ -77,7 +79,11 @@ export function parseMidi(buffer: ArrayBuffer): ParsedMidi {
         if (vel > 0) active.set(pitch, { start: pos, velocity: vel }); else close(pitch, pos);
       } else if (type === 0x80) {
         const pitch = u8(); u8(); close(pitch, pos);
-      } else if (type === 0xc0 || type === 0xd0) { u8(); }
+      } else if (type === 0xc0 || type === 0xd0) {
+        // Program change, discarded. `timbreForProgram` is the read side of what
+        // `export.ts` stamps, and wants this plus per-track notes rather than the merge.
+        u8();
+      }
       else { u8(); u8(); }
     }
     p = end;

@@ -7,10 +7,9 @@ import {
 /**
  * The hook — a short cell plus how it comes back.
  *
- * This exists because a memorable battle theme is not a longer melody, it is a SHORT
- * one you hear four times. The previous seed generator was a random walk over an
- * eighth grid: every note a fresh choice, nothing recurring, nothing to remember. You
- * cannot hum a random walk.
+ * A memorable battle theme is not a longer melody, it is a SHORT one you hear four
+ * times. A random walk over an eighth grid — every note a fresh choice, nothing
+ * recurring — gives you nothing to remember. You cannot hum a random walk.
  *
  * Two constraints do most of the work, and both run against the intuition that more
  * choice makes a better tune:
@@ -257,23 +256,29 @@ export function distinctPitches(h: Hook): number {
 /**
  * A set of hooks to choose between.
  *
- * Rhythm and scheme ROTATE from a single random offset rather than being drawn per
- * card. Drawing independently means collisions: a six-card set would routinely show
- * four cards on the same rhythm, which wastes most of the choice you are being asked
- * to make. Rotation guarantees every rhythm and every scheme appears before any
- * repeats.
+ * Rhythm and scheme ROTATE from a single random offset rather than being drawn per card:
+ * drawing independently means collisions, and a six-card set would routinely show four
+ * cards on the same rhythm, wasting most of the choice being offered.
+ *
+ * What rotation alone does not fix is the PAIRING. Both lists are five long, so advancing
+ * each by `i` cycles them in lockstep — card six lands on card one's rhythm *and* its
+ * scheme, and a six-card grid always spends one of its six cards restating a pairing you
+ * have already been shown. The lap counter is what breaks the lockstep: every time the
+ * rhythm list wraps, the scheme shifts one further, so the pairing has period 5 × 5 = 25
+ * and the first twenty-five cards are all distinct.
  */
 export function generateHookSet(key: Key, meter: Meter, rng: Rng, count: number): Hook[] {
   const rhythmOffset = rng.int(HOOK_RHYTHMS.length);
   const schemeOffset = rng.int(HOOK_SCHEMES.length);
   const out: Hook[] = [];
   for (let i = 0; i < count; i++) {
+    const lap = Math.floor(i / HOOK_RHYTHMS.length);
     out.push(generateHook({
       seed: rng.int(1_000_000_000),
       key,
       meter,
       cellBars: rng.bool(0.7) ? 2 : 1,
-      scheme: HOOK_SCHEMES[(i + schemeOffset) % HOOK_SCHEMES.length]!,
+      scheme: HOOK_SCHEMES[(i + lap + schemeOffset) % HOOK_SCHEMES.length]!,
       rhythm: HOOK_RHYTHMS[(i + rhythmOffset) % HOOK_RHYTHMS.length]!,
     }));
   }

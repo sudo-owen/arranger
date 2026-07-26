@@ -2,7 +2,7 @@ import type {
   Arrangement, Chord, Genome, Harmony, Key, Meter, Mode, Motif, Rng,
 } from '../core/index.js';
 import type { Palette } from '../core/index.js';
-import { NEUTRAL_MOOD, PALETTE_ORDER, VOICING_ORDER, barsIn, makeRng, pc } from '../core/index.js';
+import { NEUTRAL_MOOD, PALETTE_ORDER, TENOR_MOTION_ORDER, VOICING_ORDER, barsIn, makeRng, pc } from '../core/index.js';
 import type { Role, SectionLabel } from '../core/index.js';
 import type { Form, Harmony as HarmonyT, Mood } from '../core/index.js';
 import type { GenContext } from '../generate/index.js';
@@ -24,6 +24,12 @@ export interface Candidate {
   progression: Progression | null;
   /** Set on a neighbour: which single field was changed to get here. */
   label?: string;
+  /**
+   * What the critic objected to, empty when clean. Offered candidates are normally all
+   * empty; when nothing passed, the least-bad are shown rather than an empty stage and
+   * each one carries its own reason.
+   */
+  problems?: readonly string[];
 }
 
 export type Stage = 'hook' | 'bed' | 'mood' | 'form' | 'vary';
@@ -41,11 +47,10 @@ export type EvolutionKind = 'seed' | 'import' | 'extend' | 'arrangement-extend' 
 /**
  * Everything needed to put the app back exactly where a decision left it.
  *
- * Nodes used to store only the melody-and-harmony half of the state, so stepping back
- * to an earlier node silently destroyed the arrangements you had generated there —
- * which made the history unusable for the thing history is for, namely trying a
- * direction and coming back if it was worse. One type, so later phases add `hook`,
- * `form` and `mood` in a single place rather than at seven call sites.
+ * A node holds the WHOLE state, not just the melody-and-harmony half: stepping back to
+ * one has to restore the arrangements generated there, or history cannot do the thing
+ * history is for — trying a direction and coming back if it was worse. One type, so a
+ * new field lands in a single place rather than at seven call sites.
  */
 export interface Snapshot {
   source: Motif;
@@ -123,11 +128,40 @@ function bedGenome(rng: Rng, melodySeed: number, palette: Palette): Genome {
     palette,
     melody: { seed: melodySeed, ornament: 0.2 + rng.next() * 0.4 },
     bass: { seed: seed(), walkiness: rng.next(), register: rng.int(3) - 1 },
+    tenor: { seed: seed(), motion: rng.pick(TENOR_MOTION_ORDER), presence: 0.3 + rng.next() * 0.5 },
     drums: { seed: seed(), fillDensity: 0.3 + rng.next() * 0.5, swing: 0 },
     winds: { seed: seed(), activity: 0.3 + rng.next() * 0.5 },
     brass: { seed: seed(), voicing: rng.pick(VOICING_ORDER), density: 0.3 + rng.next() * 0.5 },
   };
 }
+
+/**
+ * What to put on the Bed grid, given what survived the critic and what did not.
+ *
+ * Clean candidates always win. When there are none, the least-bad rejects are shown
+ * anyway rather than an empty stage: the critic is calibrated for material this app
+ * generated, and an imported tune at its own tempo can fail every candidate — most often
+ * on the contour floor, which exists to keep a GENERATED melody kin to its hook and has
+ * no hook to measure against. An arrangement with a flaw you can hear beats a correct
+ * refusal you cannot.
+ */
+export function chooseBeds(
+  clean: readonly Candidate[],
+  nearMisses: readonly Candidate[],
+  count: number,
+): Candidate[] {
+  if (clean.length) return [...clean];
+  return [...nearMisses]
+    .sort((a, b) => (a.problems?.length ?? 0) - (b.problems?.length ?? 0))
+    .slice(0, count);
+}
+
+/** Whether a candidate set is the salvaged kind — derived, so nothing has to remember. */
+export const isFallbackSet = (candidates: readonly Candidate[]): boolean =>
+  candidates.some((c) => (c.problems?.length ?? 0) > 0);
+
+const firstProblem = (misses: readonly Candidate[]): string =>
+  misses[0]?.problems?.[0] ?? 'unknown reason';
 
 export interface FormPlan { shape: FormShape; form: Form; candidate: Candidate; problems: string[] }
 /** `drift` is parallel to `form.sections`, so the UI indexes rather than re-keying. */
@@ -146,13 +180,14 @@ type Deps = readonly unknown[];
 const sameDeps = (a: Deps, b: Deps): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
 class Memo<T> {
-  private deps: Deps | null = null;
-  private value: T | null = null;
+  // One field, not a (deps, value) pair: separate nullables cannot express "cached a
+  // null", so a `Memo<T | null>` treated every legitimate null result as a cold cache.
+  private cached: { deps: Deps; value: T } | null = null;
   get(deps: Deps, build: () => T): T {
-    if (this.deps && this.value !== null && sameDeps(this.deps, deps)) return this.value;
-    this.deps = deps;
-    this.value = build();
-    return this.value;
+    if (this.cached && sameDeps(this.cached.deps, deps)) return this.cached.value;
+    const value = build();
+    this.cached = { deps, value };
+    return value;
   }
 }
 
@@ -171,21 +206,38 @@ export class Store {
   private nextPinId = 1;
   private formMemo = new Memo<FormPlan[]>();
   private cornerMemo = new Memo<{ label: string; mood: Mood; problems: string[] }[]>();
+  private authoredMemo = new Memo<Arrangement | null>();
   private varyMemo = new Memo<VaryPlan[]>();
 
   get(): AppState { return this.state; }
   subscribe(fn: Listener): void { this.listeners.push(fn); fn(this.state); }
   private set(patch: Partial<AppState>): void { this.state = { ...this.state, ...patch }; for (const l of this.listeners) l(this.state); }
 
-  loadSource(source: Motif, bpm: number, meter: Meter, label = 'Imported MIDI', kind: EvolutionKind = 'import'): void {
+  loadSource(source: Motif, bpm: number, meter: Meter, label = 'Imported MIDI'): void {
     const key = detectKey(source);
     const harmony = inferHarmony(source, key, meter);
     const snapshot: Snapshot = { source, key, meter, bpm, harmony, candidates: [], selected: -1, hook: null, mood: NEUTRAL_MOOD, form: null, variation: {} };
-    const node = this.node(kind, label, `${barsOf(source, meter)} bars · ${keyName(key)}`, snapshot, null);
+    const node = this.node('import', label, `${barsOf(source, meter)} bars · ${keyName(key)}`, snapshot, null);
     this.set({ ...restore(snapshot), evolution: [...this.state.evolution, node], activeEvolution: node.id, status: `Started with ${label}.` });
   }
 
   setStage(stage: Stage): void { this.set({ stage }); }
+
+  /**
+   * Back to a blank slate, and out of listen mode.
+   *
+   * Imported material is recognised by having a source and no hook, so the way out of
+   * that state is to drop the material rather than to set a flag — which also means
+   * history restores land in the right mode without carrying one.
+   */
+  startCompose(): void {
+    this.set({
+      stage: 'hook', source: null, key: null, harmony: null, hook: null,
+      candidates: [], selected: -1, form: null, variation: {},
+      hookDrafts: [], selectedHookDraft: -1, mood: NEUTRAL_MOOD,
+      status: 'Generate a set of hooks to begin.',
+    });
+  }
 
   step(delta: 1 | -1): void {
     const at = STAGES.indexOf(this.state.stage);
@@ -299,48 +351,57 @@ export class Store {
     const progs = hook ? spreadByBrightness(progressionsFor(key.mode), Math.max(count, 4)) : [];
 
     const pool: Candidate[] = [];
-    const rejected: string[] = [];
+    /**
+     * Everything the critic turned down, kept rather than discarded.
+     *
+     * The critic is calibrated for material this app generated. Imported material is
+     * somebody else's tune at somebody else's tempo, and it can fail every candidate —
+     * at which point refusing to show anything leaves the user on an empty stage reading
+     * "Pick a bed first" while the actual reason sits in a status line at the bottom of
+     * the page. A flawed arrangement you can hear beats a correct refusal you cannot.
+     */
+    const nearMisses: Candidate[] = [];
+    // Offset per generate, the way `generateHookSet` does. Walking from index 0 every time
+    // means a six-card grid can never show the seventh palette, and pressing Generate
+    // again cannot change that — which made the table's ORDER encode the grid's size.
+    const paletteOffset = rng.int(PALETTE_ORDER.length);
     for (let i = 0; i < count * 4 && pool.length < count; i++) {
       const progression = progs.length ? progs[i % progs.length]! : null;
-      const palette = PALETTE_ORDER[i % PALETTE_ORDER.length]!;
+      const palette = PALETTE_ORDER[(i + paletteOffset) % PALETTE_ORDER.length]!;
       const harmony = progression ? harmonyFromProgression(progression, key, meter, bars) : owned;
       if (!harmony) break;
       const genome = bedGenome(rng, melodySeed, palette);
       const arr = arrange(this.contextFor(harmony, source, genome), genome);
-      const problems = violations(arr, arr.source, bpm);
-      if (problems.length) { rejected.push(problems[0]!); continue; }
       // A bed that falls apart at an extreme is not a bed worth offering — the Mood
       // stage would only report it afterwards. Same rule that governs the palettes.
-      let cornerFail: string | null = null;
-      for (const { mood, label } of MOOD_CORNERS) {
-        const at = arrangeAtMood(source, key, meter, bars, genome, progression, mood);
-        const problems = violations(at.arr, at.arr.source, bpm);
-        if (problems.length) { cornerFail = `${label}: ${problems[0]}`; break; }
-      }
-      if (cornerFail) { rejected.push(cornerFail); continue; }
-      pool.push({ genome, arr, progression });
+      const own = violations(arr, arr.source, bpm);
+      const problems = own.length ? own : this.cornerProblems(source, key, meter, bars, genome, progression);
+      if (problems.length) nearMisses.push({ genome, arr, progression, problems });
+      else pool.push({ genome, arr, progression });
     }
 
     // Spread the survivors so near-identical takes do not fill the grid (§7.6).
     const scored = pool.map((c) => ({ features: featureVector(c.arr), score: 1 }));
     const idx = selectDiverse(scored, Math.min(count, pool.length), 0.5);
-    const candidates = idx.map((i) => pool[i]!).filter(Boolean);
+    const candidates = chooseBeds(idx.map((i) => pool[i]!).filter(Boolean), nearMisses, count);
 
     if (!candidates.length) {
-      this.set({ status: `No arrangement passed the critic at ${bpm} BPM — ${rejected[0] ?? 'unknown reason'}. Generate again, or try a slower tempo.` });
+      this.set({ status: `Nothing could be arranged from this material at ${bpm} BPM — ${firstProblem(nearMisses)}.` });
       return;
     }
+    const caveat = isFallbackSet(candidates)
+      ? ` None passed the critic at ${bpm} BPM — ${firstProblem(nearMisses)}. Shown anyway; a slower tempo usually fixes it.`
+      : nearMisses.length ? ` ${nearMisses.length} rejected by the critic.` : '';
     const first = candidates[0]!;
     const snapshot: Snapshot = {
       ...this.snapshot(), harmony: first.arr.harmony,
       candidates, selected: 0, form: null,
     };
     const node = this.node('generate', 'Beds', `${candidates.length} arrangements · same hook`, snapshot, activeEvolution);
-    const dropped = rejected.length ? ` ${rejected.length} rejected by the critic.` : '';
     this.set({
       ...restore(snapshot),
       evolution: [...evolution, node], activeEvolution: node.id,
-      status: `${candidates.length} beds.${dropped}`,
+      status: `${candidates.length} beds.${caveat}`,
     });
   }
 
@@ -354,8 +415,8 @@ export class Store {
   /** The context every arrangement in the store is built from — form included. */
   private contextFor(harmony: HarmonyT, source: Motif, genome: Genome): GenContext {
     const form = this.state.form ?? wholeForm(harmony);
-    const { variation, meter } = this.state;
-    return { harmony, form, meter, source: varySource(source, form, variation, harmony, meter, genome) };
+    const { variation, meter, mood } = this.state;
+    return { harmony, form, meter, mood, source: varySource(source, form, variation, harmony, meter, genome) };
   }
 
   arrangeForMood(mood: Mood): { arr: Arrangement; genome: Genome; progression: Progression } | null {
@@ -375,6 +436,36 @@ export class Store {
       candidates: candidates.map((c, i) => (i === selected ? { ...c, arr: next.arr, progression: next.progression } : c)),
       status: `Mood: ${describeMood(mood).name} · ${next.progression.name}.`,
     });
+  }
+
+  /** Whatever the first failing mood corner objects to, empty if all four hold. */
+  private cornerProblems(
+    source: Motif, key: Key, meter: Meter, bars: number,
+    genome: Genome, progression: Progression | null,
+  ): string[] {
+    for (const { mood, label } of MOOD_CORNERS) {
+      const at = arrangeAtMood(source, key, meter, bars, genome, progression, mood);
+      const problems = violations(at.arr, at.arr.source, this.state.bpm);
+      if (problems.length) return [`${label}: ${problems[0]}`];
+    }
+    return [];
+  }
+
+  /**
+   * The selected take with the fight taken out of it — the baseline a mood delta is read
+   * against. `deform` is the identity at neutral and a neutral pad composes to each
+   * section's own mood, so this is the arrangement as authored rather than a fifth mood
+   * point. Memoised on the same deps as the corner report: the Mood stage reads it on
+   * every render, and it is a whole arrangement.
+   */
+  authoredArrangement(): Arrangement | null {
+    const { source, candidates, selected } = this.state;
+    const candidate = candidates[selected];
+    if (!source || !candidate) return null;
+    return this.authoredMemo.get(
+      [source, candidate.genome, candidate.progression, this.state.variation, this.state.form],
+      () => this.arrangeForMood(NEUTRAL_MOOD)?.arr ?? null,
+    );
   }
 
   /**

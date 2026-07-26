@@ -1,4 +1,5 @@
 import type { Arrangement, Genome, Key, Meter, Motif } from '../core/index.js';
+import { NEUTRAL_MOOD, PALETTES, ROLE_ORDER } from '../core/index.js';
 import { arrange } from './arrange.js';
 import type { GenContext } from './context.js';
 import { wholeForm } from './context.js';
@@ -57,8 +58,52 @@ export function arrangeAtMood(
   // The authored plan, bent by how the fight is going. Both halves of the adaptive model
   // now reach the material: `deform` moves the densities, this moves the tune itself.
   const varied = varySource(source, plan, variationForMood(variation ?? {}, plan, mood), harmony, meter, genome);
-  const ctx: GenContext = { harmony, form: plan, meter, source: varied };
+  const ctx: GenContext = { harmony, form: plan, meter, source: varied, mood };
   return { arr: arrange(ctx, deformed), genome: deformed, progression };
+}
+
+/**
+ * Everything wrong with a spec, according to THIS engine. Both repos ask this same
+ * question, so drift is a list of sentences rather than a silent flat loop or a throw
+ * mid-fight. The render at the end catches structural drift this has not learned to name.
+ */
+export function specProblems(spec: SongSpec): string[] {
+  const out: string[] = [];
+  const has = (v: unknown): boolean => v !== undefined && v !== null;
+
+  if (spec.version !== 1) out.push(`unknown spec version ${String(spec.version)} — this engine reads version 1`);
+  if (!(spec.bpm > 0)) out.push('bpm must be positive');
+  if (!has(spec.meter) || !(spec.meter.num > 0) || !(spec.meter.den > 0)) out.push('meter is missing or malformed');
+  if (!has(spec.key) || !has(spec.key.tonic) || !has(spec.key.mode)) out.push('key is missing or malformed');
+  if (!(spec.bars > 0)) out.push('bars must be positive');
+  if (!has(spec.hook) || !has(spec.hook.cell)) out.push('hook is missing');
+
+  // Named field by field: a genome written before a role existed throws inside arrange().
+  const genome: Partial<Genome> | undefined = spec.genome;
+  if (!has(genome)) out.push('genome is missing');
+  else {
+    for (const role of ROLE_ORDER) {
+      if (!has(genome[role])) out.push(`genome.${role} is missing — the spec predates that voice`);
+    }
+    if (genome.palette === undefined || !has(PALETTES[genome.palette])) {
+      out.push(`unknown palette "${String(genome.palette)}"`);
+    }
+  }
+
+  if (!progressionById(spec.progressionId)) out.push(`unknown progression "${String(spec.progressionId)}"`);
+  if (spec.formTemplate !== undefined && !FORM_SHAPES.some((s) => s.template === spec.formTemplate)) {
+    out.push(`unknown form template "${spec.formTemplate}" — the arc will be dropped`);
+  }
+
+  if (out.length) return out;
+
+  try {
+    const arr = renderSong(spec, NEUTRAL_MOOD);
+    if (!arr.tracks.some((t) => t.motif.notes.length)) out.push('renders no notes at all');
+  } catch (err) {
+    out.push(`fails to render: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return out;
 }
 
 export function formOf(spec: SongSpec, meter: Meter): Form | undefined {

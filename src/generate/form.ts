@@ -109,14 +109,14 @@ export function planForm(shape: FormShape, totalBars: number, meter: Meter): For
     sections.push({ label, start: tick(at), length: tick(length), mood: SECTION_MOOD[label] });
     at += length;
   });
-  return { sections, template: shape.template };
+  // Phase 2 moves this to the end of the intro. Until then every plan loops whole, and
+  // the consumers below read the field rather than assuming tick 0.
+  return { sections, template: shape.template, loopStart: tick(0) };
 }
 
-export const formTicks = (form: Form): number => formTicksOf(form);
-export const formBars = (form: Form, meter: Meter): number => barsIn(formTicks(form), meter);
-
-const formTicksOf = (form: Form): number =>
+export const formTicks = (form: Form): number =>
   form.sections.reduce((n, s) => n + s.length, 0);
+export const formBars = (form: Form, meter: Meter): number => barsIn(formTicks(form), meter);
 
 export function sectionAt(form: Form, t: Tick): Section {
   const last = form.sections.at(-1);
@@ -128,12 +128,16 @@ export const moodAt = (form: Form, t: Tick, global: Mood = NEUTRAL_MOOD): Mood =
   composeMood(global, sectionAt(form, t).mood);
 
 /**
- * 0–1 activity at `t`, which is what the role generators scale by.
+ * 0–1 activity at `t`, which is what the role generators scale by — the section's own
+ * urgency raised or lowered by where the fight currently is.
  *
- * `GenContext` carries no mood, so a generator cannot pass one and this is always the
- * section's own urgency today. The pad still reaches the output — through
- * `deform(genome, mood)` upstream — but per-section mood and global mood are two
- * separate channels until Phase 5 threads mood into the context and lets sections
- * deform the genome directly.
+ * Both channels have to arrive here. `deform(genome, mood)` moves the per-role dials
+ * upstream, but every generator multiplies its dial by this number, so a mood that
+ * reached only the dial would be halved before it was heard: the pad would move
+ * `brass.density` while the gate it feeds stayed pinned to the authored section plan.
+ *
+ * `global` defaults to neutral, which composes to exactly the section's own mood — the
+ * degenerate case for callers that have no fight to report.
  */
-export const intensityAt = (form: Form, t: Tick): number => sectionAt(form, t).mood.urgency;
+export const intensityAt = (form: Form, t: Tick, global: Mood = NEUTRAL_MOOD): number =>
+  moodAt(form, t, global).urgency;

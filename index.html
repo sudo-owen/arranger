@@ -18,7 +18,14 @@
           <span class="brand-sub">battle music · a hook in · a loopable track out</span>
         </div>
         <div id="legend" class="legend" aria-label="voice colours"></div>
-        <div id="keyLabel" class="keychip">—</div>
+        <div class="topmenu">
+          <label class="file">
+            <input id="file" type="file" accept=".mid,.midi,audio/midi" />
+            <span>Import MIDI</span>
+          </label>
+          <button id="newHook" class="ghost small">New hook</button>
+          <div id="keyLabel" class="keychip">—</div>
+        </div>
       </header>
 
       <nav id="rail" class="rail" aria-label="stages"></nav>
@@ -38,24 +45,15 @@
         </aside>
       </div>
 
-      <div class="foot">
-        <button id="stageBack" class="ghost">← back</button>
-        <button id="stageNext" class="primary">continue →</button>
-      </div>
+      <button id="stageBack" class="nav-edge left ghost" title="Previous stage">←<span>back</span></button>
+      <button id="stageNext" class="nav-edge right primary" title="Next stage">→<span>continue</span></button>
 
       <details class="drawer" id="advanced">
-        <summary>Advanced — import, harmony, export</summary>
+        <summary>Advanced — harmony, source editing</summary>
         <div class="drawer-body">
           <div class="controls">
-            <label class="file">
-              <input id="file" type="file" accept=".mid,.midi,audio/midi" />
-              <span>Load MIDI</span>
-            </label>
-            <button id="demo" class="ghost">Load classic demo</button>
             <button id="extend" class="ghost">Extend source ×2</button>
             <button id="promote" class="ghost">Use melody as source</button>
-            <button id="export" class="ghost">Export MIDI</button>
-            <button id="exportSpec" class="ghost">Export song.json</button>
           </div>
 
           <div id="chordStrip" class="chordstrip">Chords appear here once a hook is committed.</div>

@@ -10,16 +10,12 @@ import { intensityAt } from '../form.js';
  * Winds — complementary rhythm (spec §7.4), both halves of it. Where the melody leaves
  * room the winds move; where it does not, they sustain underneath it.
  *
- * Only the first half was ever implemented, and it was measured against onsets: a beat
- * counted as busy if any note began in it. That reads correctly for the quarter-note
- * source melodies this was written for, and backwards for a battle hook, which averages
- * three onsets a beat and covers 80–100% of every one. So every beat was busy, the
- * generator emitted nothing, and one voice of five was silent on the app's only path.
- *
- * Measuring sounding coverage instead splits the track into windows the melody occupies
- * and windows it leaves open, and gives each the treatment it should have had. A window
- * is one or the other, never both, so the line stays monophonic by construction — which
- * is what the critic holds a solo wind to.
+ * "Busy" is measured as SOUNDING COVERAGE, not as onsets. A battle hook averages three
+ * onsets a beat and covers 80–100% of every one, so an onset test marks every beat busy
+ * and the generator writes nothing at all. Coverage splits the track into windows the
+ * melody occupies and windows it leaves open. A window is one or the other, never both,
+ * so the line stays monophonic by construction — which is what the critic holds a solo
+ * wind to.
  *
  * Takes the GENERATED melody (DAG §8.3), not the source — winds answer what was written.
  */
@@ -107,7 +103,7 @@ export function generateWinds(
     // `activity` mean two different things — 0 was silence in one and 45% in the other —
     // and left half the winds deaf to the form arc, identically dense in the intro and
     // the climax.
-    const presence = params.activity * (0.35 + intensityAt(g.form, tick(w)) * 1.1);
+    const presence = params.activity * (0.35 + intensityAt(g.form, tick(w), g.mood) * 1.1);
     const open: number[] = [];
     for (let t = w; t < w + window; t += beat) if (isOpen(t)) open.push(t);
 

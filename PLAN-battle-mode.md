@@ -157,6 +157,9 @@ Six decisions worth recording, because they differ from what this plan first sai
    beat for the whole song, so every candidate would have been rejected. It was only
    passing before because the old gate never looked at it. Triangle bass is also what
    the target sound wants.
+   *Superseded:* the bass slot now also accepts `LOW_BRASS` and `LOW_WINDS`. A soloist
+   is still rejected for exactly this reason; a section is not, because `sectionOf`
+   carries `maxPhraseSec: Infinity`. Articulation still binds either way.
 2. **No `NOISE_PERC` instrument.** Drums deliberately carry no `Instrument` (they are a
    pitch map, not a range), and inventing one would create a range check for a drum kit.
 3. **The critic gates on class *and* monophony**, not role names. `runSeconds` measures
@@ -258,6 +261,9 @@ Deliberate scope cut: **no acoustic-lead palette.** A flute or clarinet lead is
 correctly rejected by the critic at 168 BPM (breath limit over a continuous 16-bar
 line), so offering it would mean offering a card that can never be generated. Lead is
 always chip and bass always triangle; the palette varies only winds and brass.
+*Superseded:* `winds-lead`, `deep-brass` and `low-winds` put sections on the lead and
+the bottom. The cut still holds for SOLOISTS — what changed is that a section is not
+one, and the palette now varies all four pitched slots.
 
 Verified: 122 tests green, and in the browser six beds covering six distinct
 progressions across dark/neutral/bright with four palettes rotating, chords resolving
@@ -323,8 +329,8 @@ would rebuild the panel under the cursor, so the drag re-arranges and swaps at t
 bar line for audio only. The stage also reports live whether the bed survives all four
 corners.
 
-**3b · Runtime.** `npm run vendor:engine` copies the DOM-free packages into
-`munch/src/app/music/engine` with a recorded checksum; `npm run vendor:check` fails if
+**3b · Runtime.** `npm run ship` copies the DOM-free packages into
+`munch/src/app/music/engine` with a recorded checksum; `npm run ship:check` fails if
 they drift. `BattleMusicService` now renders from `song.json` via the engine instead of
 parsing a MIDI file — which deleted its hand-mirrored timbre table and its hand-rolled
 MIDI parser outright. Mood moves on two time-scales: per-role gain nodes glide in ~80 ms,

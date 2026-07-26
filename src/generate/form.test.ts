@@ -10,7 +10,7 @@ import {
 import { defaultProgression, harmonyFromProgression } from './progressions.js';
 import { formOf, renderSong } from './song.js';
 import type { SongSpec } from './song.js';
-import { BPM, KEY, LENGTHS, METER, TEMPOS, fixtureGenome, notesOf, problemsFor, testHooks, track } from '../testing/index.js';
+import { BPM, KEY, LENGTHS, METER, TEMPOS, fixtureGenome, notesOf, problemsFor, testHooks, track, tune, velocities } from '../testing/index.js';
 
 
 describe('length targets', () => {
@@ -47,8 +47,8 @@ describe('planForm', () => {
   });
 
   it('never inverts the weight order, at any length a tempo can produce', () => {
-    // Rounding each weight independently used to push all the drift onto the first
-    // part, so at 28 bars the arc's intro came out longest and its climax shortest.
+    // Rounding each weight independently pushes all the drift onto the first part: at
+    // 28 bars that makes the arc's intro the longest section and its climax the shortest.
     for (const shape of FORM_SHAPES) {
       for (let bars = minBars(shape); bars <= 400; bars += 4) {
         const sections = planForm(shape, bars, METER).sections;
@@ -153,7 +153,7 @@ describe('loopSeamProblems', () => {
   const form = planForm(FORM_SHAPES[2]!, bars, METER);
   const source = renderHook(generateHookSet(KEY, METER, makeRng(2), 1)[0]!, bars);
   const harmony = harmonyFromProgression(defaultProgression('minor'), KEY, METER, bars);
-  const arr = arrange({ harmony, form, meter: METER, source }, fixtureGenome({ palette: 'chip-orchestral' }));
+  const arr = arrange({ harmony, form, meter: METER, source, mood: NEUTRAL_MOOD }, fixtureGenome({ palette: 'chip-orchestral' }));
 
   it('accepts a track whose last chord leads back to its first', () => {
     expect(loopSeamProblems(arr, METER)).toEqual([]);
@@ -233,6 +233,9 @@ describe('a form survives the round trip to song.json', () => {
       genome: fixtureGenome({ palette: 'chip-orchestral' }), progressionId: 'aeolian-vamp',
     };
     const mel = (spec: SongSpec) => renderSong(spec, NEUTRAL_MOOD).tracks.find((t) => t.role === 'melody')!.motif.notes;
-    expect(mel({ ...base, formTemplate: 'arc' })).toEqual(mel(base));
+    const arced = mel({ ...base, formTemplate: 'arc' });
+    expect(tune(arced)).toEqual(tune(mel(base)));
+    // ...and the arc is audible in how it is played, which is the whole point of one.
+    expect(velocities(arced)).not.toEqual(velocities(mel(base)));
   });
 });

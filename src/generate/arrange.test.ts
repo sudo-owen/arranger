@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ROLE_ORDER } from '../core/index.js';
 import { arrange } from './arrange.js';
 import { fixtureContext, fixtureGenome } from '../testing/index.js';
 
@@ -11,9 +12,9 @@ describe('arrange() — the §8.3 DAG', () => {
     expect(a).toEqual(b); // any stray Math.random() breaks this loudly (§11)
   });
 
-  it('produces the five roles, drums without a pitched instrument', () => {
+  it('produces every role, drums without a pitched instrument', () => {
     const { tracks } = arrange(G, fixtureGenome());
-    expect(tracks.map((t) => t.role)).toEqual(['melody', 'bass', 'drums', 'winds', 'brass']);
+    expect(tracks.map((t) => t.role)).toEqual([...ROLE_ORDER]);
     const drums = tracks.find((t) => t.role === 'drums');
     expect(drums?.instrument).toBeUndefined();
     for (const t of tracks) {

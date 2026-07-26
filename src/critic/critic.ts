@@ -1,5 +1,5 @@
 import type { Arrangement, Meter, Motif, Note } from '../core/index.js';
-import { CRASH, PPQ, barTicks, inRange, pc, secPerTick, specFor } from '../core/index.js';
+import { CRASH, PPQ, ROLE_ORDER, barTicks, inRange, pc, secPerTick, specFor } from '../core/index.js';
 import { contourSimilarity, cosine, CONTOUR_FLOOR } from '../theory/index.js';
 
 /**
@@ -13,8 +13,8 @@ import { contourSimilarity, cosine, CONTOUR_FLOOR } from '../theory/index.js';
  * playing a MONOPHONIC line — the two conditions the underlying model actually
  * assumes. A pulse channel has no tongue to outrun, and `runSeconds` measures a
  * single line, so pointing it at a block-voiced brass stack yields a number that
- * means nothing. Both gates used to be a hardcoded `role === 'winds' || 'brass'`
- * test, which happened to be right for one palette and silently wrong for any other.
+ * means nothing. Both gates read the voice rather than the role name: which roles are
+ * acoustic is a property of the palette, and any role can be either.
  */
 
 function isMonophonic(m: Motif): boolean {
@@ -66,31 +66,35 @@ export const isValid = (arr: Arrangement, source: Motif, bpm: number): boolean =
   violations(arr, source, bpm).length === 0;
 
 /**
- * The track loops forever in game, so bar 1 follows the last bar more often than any
- * other pair in the piece — and it is the one join nothing else checks. Two ways it
- * audibly thuds: a chord that does not lead anywhere, and a crash landing on the wrap
- * where the downbeat crash already is.
+ * The track loops forever in game, so the return point follows the last bar more often
+ * than any other pair in the piece — and it is the one join nothing else checks.
+ *
+ * `loopStart` is where playback returns to, which is not necessarily tick 0: a track with
+ * an intro plays its head once and loops the body. Every check below is about that join,
+ * so all three read it rather than assuming bar 1.
  */
-export function loopSeamProblems(arr: Arrangement, meter: Meter): string[] {
+export function loopSeamProblems(arr: Arrangement, meter: Meter, loopStart = 0): string[] {
   const out: string[] = [];
   const events = arr.harmony.events;
-  const first = events[0]?.chord;
+  const returnTo = events.find((e) => e.start <= loopStart && loopStart < e.start + e.duration)
+    ?? events[0];
+  const first = returnTo?.chord;
   const last = events.at(-1)?.chord;
   if (first && last) {
     const motion = pc(first.root - last.root);
     // Authentic (V→I, 5), plagal (IV→I, 7), step approaches (2, 10), or staying put.
-    // Omitting the plagal return rejected `heroic-major` — which is the default major
-    // progression — and disabled every plan on the Form stage with no way forward.
+    // Omitting the plagal return rejects `heroic-major`, the default major progression.
     if (![0, 2, 5, 7, 10].includes(motion)) {
-      out.push(`loop seam: last chord does not lead back to the first (${motion} semitones)`);
+      out.push(`loop seam: last chord does not lead back to the return point (${motion} semitones)`);
     }
   }
 
   const drums = arr.tracks.find((t) => t.role === 'drums');
   if (drums) {
     const lastBar = arr.length - barTicks(meter);
-    if (drums.motif.notes.some((n) => n.pitch === CRASH && n.start >= lastBar)) {
-      out.push('loop seam: a crash in the final bar collides with the downbeat crash');
+    const crashAtReturn = drums.motif.notes.some((n) => n.pitch === CRASH && n.start === loopStart);
+    if (crashAtReturn && drums.motif.notes.some((n) => n.pitch === CRASH && n.start >= lastBar)) {
+      out.push('loop seam: a crash in the final bar collides with the crash at the return point');
     }
   }
 
@@ -124,8 +128,7 @@ export function featureVector(arr: Arrangement): number[] {
   const pcHist = hist.map((h) => (total ? h / total : 0));
 
   const bars = Math.max(1, arr.length / PPQ);
-  const roleOrder = ['melody', 'bass', 'drums', 'winds', 'brass'] as const;
-  const density = roleOrder.map((role) => {
+  const density = ROLE_ORDER.map((role) => {
     const tr = arr.tracks.find((t) => t.role === role);
     return tr ? tr.motif.notes.length / bars : 0;
   });

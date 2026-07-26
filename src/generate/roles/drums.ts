@@ -24,7 +24,7 @@ export function generateDrums(g: GenContext, params: Genome['drums'], rng: Rng):
   for (let b = 0; b < nBars; b++) {
     const barStart = b * bar;
     // Per bar, so a section boundary changes the kit rather than just adding a crash.
-    const intensity = intensityAt(g.form, tick(barStart));
+    const intensity = intensityAt(g.form, tick(barStart), g.mood);
     for (let i = 0; i < g.meter.num; i++) {
       const t = barStart + i * beat;
       hit(t, i % 2 === 0 ? KICK : SNARE, Math.round(88 + intensity * 24));

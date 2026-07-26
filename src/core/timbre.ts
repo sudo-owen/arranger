@@ -5,10 +5,9 @@ import type { Instrument } from './types.js';
  *
  * Pure data — no WebAudio, no DOM — so it lives in the engine and both renderers read
  * the same numbers. song-creatr's `audio/synth.ts` interprets it, and munch's
- * `BattleMusicService` interprets it identically. That matters more than it sounds:
- * previously song-creatr auditioned a sine lead over sawtooth winds while the game
- * played the same MIDI as square waves, so every taste decision made while authoring
- * was made against a sound that never shipped.
+ * `BattleMusicService` interprets it identically. That matters more than it sounds: the
+ * moment the two disagree, every taste decision made while authoring is made against a
+ * sound that never ships.
  *
  * The `gmProgram` on each timbre is the wire format. Export stamps it into the MIDI
  * file, munch reads it back and looks the timbre up here — so adding a voice is one
@@ -26,10 +25,10 @@ export type FilterSpec =
    * below it passed. Pitch-relative, so the colour tracks the note instead of shifting
    * across the range the way a fixed `lowpass` does.
    *
-   * This exists because `bandpass-rel` costs a voice most of its level. A bandpass
-   * centred at 2f discards the fundamental — measured against the pulse lead, the winds
-   * rendered 14.1 dB down, of which 7.8 dB was the filter alone, and a wind section
-   * 14 dB under the tune is not a mix decision, it is an inaudible voice.
+   * Preferred over `bandpass-rel` for anything carrying a line: a bandpass centred at 2f
+   * discards the fundamental and costs the voice most of its level — 14.1 dB under the
+   * pulse lead when measured, 7.8 dB of that the filter alone. A wind section 14 dB under
+   * the tune is not a mix decision, it is an inaudible voice.
    */
   | { kind: 'lowpass-rel'; mult: number; q: number }
   /**
@@ -50,7 +49,9 @@ export interface VoiceTimbre {
   gmProgram: number;
 }
 
-export type TimbreName = 'pulse-lead' | 'pulse-2' | 'tri-bass' | 'winds' | 'brass';
+export type TimbreName =
+  | 'pulse-lead' | 'pulse-2' | 'tri-bass' | 'winds' | 'brass'
+  | 'low-brass' | 'low-winds' | 'horns';
 
 /**
  * Chip envelopes are near-instant and flat-sustained (attack 4ms, release 30ms) —
@@ -83,15 +84,43 @@ export const TIMBRES: Readonly<Record<TimbreName, VoiceTimbre>> = {
     filter: { kind: 'lowpass-sweep', openMult: 2, peakMult: 5, settleMult: 2.5, openSec: 0.04 },
     attackSec: 0.008, releaseSec: 0.1, peak: 0.2, sustain: 0.8, gmProgram: 61,
   },
+  /**
+   * Trombones and tuba. The same blown gesture as `brass` with a duller sweep and a
+   * slower opening: low brass speaks late, and the filter mults are pitch-relative, so
+   * at E2 a `peakMult` of 5 would put the peak where the section has no partials to
+   * excite and read as a bright saw rather than as weight.
+   */
+  'low-brass': {
+    wave: 'sawtooth',
+    filter: { kind: 'lowpass-sweep', openMult: 1.5, peakMult: 3.5, settleMult: 2, openSec: 0.06 },
+    attackSec: 0.014, releaseSec: 0.12, peak: 0.19, sustain: 0.85, gmProgram: 58,
+  },
+  // Bassoon/bass-clarinet reed, an octave-and-a-bit below the `winds` formant. Vibrato
+  // is shallower than the `winds` 3 Hz: at this pitch the same depth is a wobble.
+  'low-winds': {
+    wave: 'sawtooth', filter: { kind: 'lowpass-rel', mult: 3, q: 2 },
+    attackSec: 0.04, releaseSec: 0.15, peak: 0.18, sustain: 0.85,
+    vibratoHz: 4.5, vibratoDepthHz: 1.5, gmProgram: 70,
+  },
+  // Horns: rounder than the trumpet-led section, which is what lets a pedal sit under
+  // the tune without competing with it. Softer attack, gentler sweep, lower peak.
+  horns: {
+    wave: 'sawtooth',
+    filter: { kind: 'lowpass-sweep', openMult: 1.8, peakMult: 3, settleMult: 2.2, openSec: 0.05 },
+    attackSec: 0.022, releaseSec: 0.14, peak: 0.17, sustain: 0.85, gmProgram: 60,
+  },
 };
 
 export function timbreNameFor(inst: Instrument): TimbreName {
   switch (inst.name) {
     case 'lead': case 'pulse lead': return 'pulse-lead';
-    case 'pulse 2': case 'pulse brass': return 'pulse-2';
+    case 'pulse 2': case 'pulse brass': case 'pulse tenor': return 'pulse-2';
     case 'tri bass': return 'tri-bass';
-    case 'flute': case 'oboe': case 'clarinet': case 'bassoon': case 'winds': return 'winds';
-    case 'trumpet': case 'horn': case 'trombone': case 'tuba': case 'brass': return 'brass';
+    case 'flute': case 'oboe': case 'clarinet': case 'winds': return 'winds';
+    case 'bassoon': case 'low winds': return 'low-winds';
+    case 'trumpet': case 'brass': return 'brass';
+    case 'horn': case 'horns': return 'horns';
+    case 'trombone': case 'tuba': case 'low brass': return 'low-brass';
     default: return inst.class === 'chip' ? 'pulse-lead' : 'winds';
   }
 }

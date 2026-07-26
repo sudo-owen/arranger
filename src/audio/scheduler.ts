@@ -26,10 +26,36 @@ export function nextBoundary(relNow: number, lookahead: number, barSec: number, 
   return Math.max(0, Math.ceil((relNow + lookahead + guardSec) / barSec) * barSec);
 }
 
+/**
+ * The timeline for the rest of this pass: the old material up to the boundary, the new
+ * material from it. Pure, and the other half of what makes the swap seamless.
+ *
+ * The boundary sits BEYOND the lookahead window by construction, so the stretch between
+ * the lookahead edge and the boundary — up to a full bar — has not been handed to the
+ * audio clock yet. Replacing the array outright and seeking to the boundary drops that
+ * stretch from both timelines at once: the old events are gone and the new ones are
+ * skipped, so the track goes silent for the rest of the bar on every swap.
+ *
+ * Splicing also keeps the scheduler's cursor valid without touching it. Every event
+ * already scheduled has `time` below the boundary, so it survives in the same position,
+ * and an index counting consumed events still means what it meant.
+ */
+export function spliceAtBoundary(
+  current: readonly FlatEvent[], next: readonly FlatEvent[], at: number,
+): FlatEvent[] {
+  return [...current.filter((e) => e.time < at), ...next.filter((e) => e.time >= at)];
+}
+
 export class Transport {
   private timer: ReturnType<typeof setInterval> | null = null;
   private events: FlatEvent[] = [];
   private idx = 0;
+  /**
+   * The arrangement that takes over at the next loop point. A swap always lands whole at
+   * the wrap, even when it also spliced into the middle of the current pass — otherwise
+   * the spliced timeline (old head, new tail) would repeat forever.
+   */
+  private atLoop: FlatEvent[] | null = null;
   private loopBase = 0;
   private playStart = 0;
   private loopLenSec = 0.001;
@@ -71,6 +97,7 @@ export class Transport {
 
   load(arr: Arrangement, bpm: number): void {
     this.events = flatten(arr, bpm);
+    this.atLoop = null;
     this.loopLenSec = Math.max(0.001, arr.length * secPerTick(bpm));
     this.cursorSec = 0;
     this.idx = 0;
@@ -102,8 +129,31 @@ export class Transport {
     this.loopBase = 0;
   }
 
+  /**
+   * Jump to a point in the loop.
+   *
+   * Deliberately abrupt — `halt()` cuts anything ringing, the way `swapTo` does. A seek
+   * is the one gesture where the listener has *asked* for a discontinuity, so smoothing
+   * it into the next bar line would feel like the scrub was ignored.
+   */
+  seek(sec: number): void {
+    const target = Math.max(0, Math.min(sec, this.loopLenSec));
+    if (!this.playing) {
+      this.cursorSec = target;
+      const next = this.events.findIndex((event) => event.time >= target);
+      this.idx = next < 0 ? this.events.length : next;
+      this.onTick?.(target, this.loopLenSec);
+      return;
+    }
+    this.halt();
+    this.cursorSec = target;
+    this.loopBase = 0;
+    this.play();
+  }
+
   private halt(): void {
     if (this.timer !== null) { clearInterval(this.timer); this.timer = null; }
+    this.atLoop = null;
     for (const v of this.live) { try { v.node.stop(); } catch { /* already stopped */ } }
     this.live = [];
   }
@@ -126,10 +176,11 @@ export class Transport {
   /**
    * Swap material at the next bar line, leaving already-scheduled voices to ring out.
    *
-   * The trick that makes this seamless: pick a boundary strictly BEYOND the lookahead
-   * window, so nothing past it has been scheduled yet and there is nothing to cancel.
-   * Everything before the boundary was already queued and plays out naturally; the new
-   * arrangement takes over from the boundary. No `halt()`, so no chopped tails.
+   * Two halves make it seamless. The boundary sits strictly BEYOND the lookahead window,
+   * so nothing past it has been scheduled and there is nothing to cancel — no `halt()`,
+   * no chopped tails. And the timeline is SPLICED rather than replaced, so the bar
+   * between the lookahead edge and the boundary still plays its old material instead of
+   * falling silent.
    *
    * Only valid between arrangements on the same grid — a different length or tempo
    * moves the bar lines themselves, so those fall back to the immediate swap.
@@ -148,17 +199,19 @@ export class Transport {
 
     const origin = this.playStart + this.loopBase; // absolute time of this pass's tick 0
     const swapRel = nextBoundary(this.ctx.currentTime - origin, this.lookahead, barSec);
+    const next = flatten(arr, bpm);
 
-    this.events = flatten(arr, bpm);
+    // From the NEXT pass on, the new arrangement plays whole. Both branches below only
+    // decide what the remainder of the current pass sounds like.
+    this.atLoop = next;
+
     if (swapRel >= this.loopLenSec) {
-      // The boundary is past the end of this pass. Let the old material finish and
-      // start the new arrangement at the loop point — the scheduler's own wrap
-      // (idx exhausted -> idx = 0, loopBase += loopLenSec) lands it exactly there.
-      this.idx = this.events.length;
+      // The boundary is past the end of this pass: the old material simply finishes and
+      // the hand-off happens at the loop point, which the wrap in `schedule()` applies.
       return this.loopLenSec;
     }
-    const next = this.events.findIndex((event) => event.time >= swapRel);
-    this.idx = next < 0 ? this.events.length : next;
+    // `idx` is deliberately untouched — see `spliceAtBoundary`.
+    this.events = spliceAtBoundary(this.events, next, swapRel);
     return swapRel;
   }
 
@@ -176,6 +229,7 @@ export class Transport {
           this.onTick?.(0, this.loopLenSec);
           return;
         }
+        if (this.atLoop) { this.events = this.atLoop; this.atLoop = null; }
         this.idx = 0;
         this.loopBase += this.loopLenSec;
         continue;

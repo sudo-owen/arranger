@@ -21,10 +21,8 @@ export interface InstrumentSpec extends Instrument {
    * so a unison line can run indefinitely — the phrase limit simply does not apply.
    * Articulation still does: every player has their own tongue.
    *
-   * This used to be true of brass by accident. `BRASS_SECTION` was a plain `Instrument`
-   * with no entry in the spec table, so the lookup returned null and every breath check
-   * silently passed. Same outcome, no stated reason, and nothing stopping the next
-   * section-shaped voice from being held to a soloist's lungs.
+   * Stated here rather than left to a missing spec-table entry, so that exempting a
+   * voice from the breath check is a claim about the voice and not an absence.
    */
   section: boolean;
 }
@@ -56,6 +54,12 @@ export const PULSE_2    = chip('pulse 2',    48, 91); // C3–G6, counter-line
 export const TRI_BASS   = chip('tri bass',   28, 60); // E1–C4
 
 export const PULSE_BRASS = chip('pulse brass', 40, 82);
+/**
+ * The chip counterpart to `HORN_SECTION`, given the same window on purpose: with the
+ * ranges matched, `fitToRange` folds identically, so swapping the tenor between a chip
+ * and an acoustic palette changes the timbre and not one note.
+ */
+export const PULSE_TENOR = chip('pulse tenor', 41, 72);
 
 /**
  * A generic lead voice for the melody — generous range, so we never reject the user's
@@ -66,16 +70,36 @@ export const LEAD: Instrument = { name: 'lead', low: midi(48), high: midi(96), c
 export const BRASS_SECTION = sectionOf('brass', 40, 82, 9);
 /**
  * Winds in unison (flutes over clarinets) — spans wider than any one player, and
- * articulates like the instruments actually in that range. It was briefly given the
- * oboe's 12/s while carrying a G3–C7 span no oboe can reach, which made it the one
- * voice that could not play a sixteenth at the top of the tempo band.
+ * articulates like the instruments actually in that range rather than like the slowest
+ * of them. At 14/s it can still play a sixteenth at the top of the tempo band.
  */
 export const WIND_SECTION = sectionOf('winds', 55, 93, 14);
 
+/**
+ * The low sections — trombones with tuba, and bassoons with bass clarinet.
+ *
+ * These are what let the bass slot hold anything but a triangle. A bass line plays a
+ * note per beat for the whole track, which is past any soloist's breath: only a voice
+ * with no lungs or a section that staggers its breathing can carry it. Nothing else
+ * about the check is relaxed — articulation still binds, and at a quarter-note per beat
+ * the line asks for 3.1 notes/sec at the top of the tempo band against a ceiling of 7.
+ *
+ * `LOW_BRASS` floors at E1 rather than the tuba's D1 to match `TRI_BASS`'s window, so a
+ * palette swap on the bass slot is a change of timbre and not of notes.
+ */
+export const LOW_BRASS = sectionOf('low brass', 28, 70, 7);   // E1–Bb4, trombone+tuba
+export const LOW_WINDS = sectionOf('low winds', 34, 72, 10);  // Bb1–C5, bassoon+bass clarinet
+/**
+ * Horns in unison, the tenor pad. A single horn is a soloist (`HORN`, 5s of breath) and
+ * cannot hold a pedal under a 90-second track; a section can, which is what the role is.
+ */
+export const HORN_SECTION = sectionOf('horns', 41, 72, 9);    // F2–C5
+
 export const WINDS: readonly InstrumentSpec[] = [FLUTE, OBOE, CLARINET, BASSOON];
 export const BRASS: readonly InstrumentSpec[] = [TRUMPET, HORN, TROMBONE, TUBA];
-export const CHIP: readonly InstrumentSpec[] = [PULSE_LEAD, PULSE_2, PULSE_BRASS, TRI_BASS];
-export const SECTIONS: readonly InstrumentSpec[] = [BRASS_SECTION, WIND_SECTION];
+export const CHIP: readonly InstrumentSpec[] = [PULSE_LEAD, PULSE_2, PULSE_BRASS, PULSE_TENOR, TRI_BASS];
+export const SECTIONS: readonly InstrumentSpec[] =
+  [BRASS_SECTION, WIND_SECTION, LOW_BRASS, LOW_WINDS, HORN_SECTION];
 export const ALL_SPECS: readonly InstrumentSpec[] = [...WINDS, ...BRASS, ...CHIP, ...SECTIONS];
 
 export function specFor(inst: Instrument): InstrumentSpec | null {
@@ -87,8 +111,8 @@ export function specFor(inst: Instrument): InstrumentSpec | null {
  * The fastest tempo generation is written to survive. Generation stays a pure function
  * of the genome — the project's BPM never reaches it (§8.5) — but the articulation
  * floor below has to assume *some* tempo, and an assumption with a name can be checked
- * and changed. It was previously a bare `PPQ / 4`, which is this calculation evaluated
- * at roughly 170 BPM and then forgotten, so the top of the band silently broke.
+ * and changed. It must stay at or above the fastest tempo the UI offers, or the top of
+ * the band writes figures the voice cannot articulate.
  */
 export const GENERATION_REF_BPM = 185;
 
@@ -106,24 +130,24 @@ export function minArticulation(inst: Instrument): number {
 
 /**
  * Which voices are chip and which are acoustic — the actual "GBA meets orchestra"
- * dial, expressed as five points on it.
+ * dial, expressed as seven points on it.
  *
- * The BASS is always triangle: a line playing on every beat for a whole track is
- * beyond any set of lungs, and the critic rejects it correctly.
- *
- * The lead used to be forced to chip for the same reason, and no longer is. Three
- * changes made a wind lead playable: hooks now breathe at the end of every phrase,
- * sections stagger their breathing, and ornamentation will not subdivide below what
- * the voice can tongue. `winds-lead` is the result — the hook itself carried by the
- * wind section over a chip rhythm section.
+ * Neither the lead nor the bass is restricted to chip. Three things make an acoustic
+ * voice playable on a continuous line at battle tempo: hooks breathe at the end of every
+ * phrase, sections stagger their breathing, and ornamentation will not subdivide below
+ * what the voice can tongue. `winds-lead` carries the hook on the wind section over a
+ * chip rhythm section; `deep-brass` and `low-winds` put a section on the bottom.
  */
-export type Palette = 'full-chip' | 'chip-brass' | 'chip-winds' | 'chip-orchestral' | 'winds-lead';
+export type Palette =
+  | 'full-chip' | 'chip-brass' | 'chip-winds' | 'chip-orchestral' | 'winds-lead'
+  | 'deep-brass' | 'low-winds';
 
 export interface PaletteSpec {
   label: string;
   blurb: string;
   melody: Instrument;
   bass: Instrument;
+  tenor: Instrument;
   winds: Instrument;
   brass: Instrument;
 }
@@ -131,28 +155,37 @@ export interface PaletteSpec {
 export const PALETTES: Readonly<Record<Palette, PaletteSpec>> = {
   'full-chip': {
     label: 'Full chip', blurb: 'every voice a pulse channel',
-    melody: PULSE_LEAD, bass: TRI_BASS, winds: PULSE_2, brass: PULSE_BRASS,
+    melody: PULSE_LEAD, bass: TRI_BASS, tenor: PULSE_TENOR, winds: PULSE_2, brass: PULSE_BRASS,
   },
   'chip-brass': {
     label: 'Chip + brass', blurb: 'square lead over a real brass section',
-    melody: PULSE_LEAD, bass: TRI_BASS, winds: PULSE_2, brass: BRASS_SECTION,
+    melody: PULSE_LEAD, bass: TRI_BASS, tenor: HORN_SECTION, winds: PULSE_2, brass: BRASS_SECTION,
   },
   'chip-winds': {
     label: 'Chip + winds', blurb: 'square lead, oboe counter-line',
-    melody: PULSE_LEAD, bass: TRI_BASS, winds: WIND_SECTION, brass: PULSE_BRASS,
+    melody: PULSE_LEAD, bass: TRI_BASS, tenor: PULSE_TENOR, winds: WIND_SECTION, brass: PULSE_BRASS,
   },
   'chip-orchestral': {
     label: 'Chip + orchestra', blurb: 'chip rhythm section, acoustic winds and brass',
-    melody: PULSE_LEAD, bass: TRI_BASS, winds: WIND_SECTION, brass: BRASS_SECTION,
+    melody: PULSE_LEAD, bass: TRI_BASS, tenor: HORN_SECTION, winds: WIND_SECTION, brass: BRASS_SECTION,
   },
   'winds-lead': {
     label: 'Winds lead', blurb: 'the hook carried by winds, chip rhythm underneath',
-    melody: WIND_SECTION, bass: TRI_BASS, winds: PULSE_2, brass: BRASS_SECTION,
+    melody: WIND_SECTION, bass: TRI_BASS, tenor: PULSE_TENOR, winds: PULSE_2, brass: BRASS_SECTION,
+  },
+  'deep-brass': {
+    label: 'Deep brass', blurb: 'square lead over trombones, tuba and horns',
+    melody: PULSE_LEAD, bass: LOW_BRASS, tenor: HORN_SECTION, winds: PULSE_2, brass: BRASS_SECTION,
+  },
+  'low-winds': {
+    label: 'Low winds', blurb: 'bassoons on the bottom, horns in the middle',
+    melody: PULSE_LEAD, bass: LOW_WINDS, tenor: HORN_SECTION, winds: WIND_SECTION, brass: PULSE_BRASS,
   },
 };
 
+/** Every entry is reachable: `generateBeds` walks this from a random offset each time. */
 export const PALETTE_ORDER: readonly Palette[] =
-  ['chip-orchestral', 'chip-brass', 'winds-lead', 'chip-winds', 'full-chip'];
+  ['chip-orchestral', 'deep-brass', 'chip-brass', 'winds-lead', 'full-chip', 'low-winds', 'chip-winds'];
 
 export function inRange(pitch: Midi, inst: Instrument): boolean {
   return pitch >= inst.low && pitch <= inst.high;

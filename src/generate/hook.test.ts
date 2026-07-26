@@ -213,6 +213,19 @@ describe('generateHookSet', () => {
     }
   });
 
+  it('never offers the same rhythm-and-scheme pairing twice in one set', () => {
+    // Distinct rhythms is not the property that matters — with five rhythms, a six-card
+    // grid can only ever show five, and the old test passed while card six restated card
+    // one on BOTH axes. What is being chosen between is the pairing.
+    for (let seed = 0; seed < 25; seed++) {
+      for (const count of [6, 10, HOOK_RHYTHMS.length * HOOK_SCHEMES.length]) {
+        const pairs = generateHookSet(KEY, METER, makeRng(seed), count)
+          .map((h) => `${h.rhythm}/${h.scheme}`);
+        expect(new Set(pairs).size, `seed ${seed} @ ${count} cards`).toBe(count);
+      }
+    }
+  });
+
   it('is deterministic in the rng seed', () => {
     const a = generateHookSet(KEY, METER, makeRng(11), 4);
     const b = generateHookSet(KEY, METER, makeRng(11), 4);

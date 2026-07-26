@@ -13,7 +13,7 @@ export interface Note {
 export interface Motif {
   /**
    * Sorted by `start`, ascending. This invariant is load-bearing: every operator
-   * must preserve it (dev check: assertMotif). Constructing via motif() guarantees it.
+   * must preserve it. Constructing via motif() guarantees it.
    */
   notes: readonly Note[];
   length: Tick;
@@ -62,8 +62,18 @@ export interface Meter {
   den: number; // e.g. { num: 4, den: 4 }
 }
 
-export type Role = 'melody' | 'bass' | 'drums' | 'winds' | 'brass';
-export const ROLE_ORDER: readonly Role[] = ['melody', 'bass', 'drums', 'winds', 'brass'];
+/**
+ * `tenor` is the low counter-voice: horns (or a second pulse) in the octave between the
+ * bass line and the brass stack. Nothing else holds that octave continuously — bass
+ * writes below it, and brass voices its stacks down from the melody only where
+ * `density × intensity` lets a hit through.
+ *
+ * A separate ROLE rather than extra notes on the bass track, because the critic skips
+ * articulation and breath for any non-monophonic motif: stacking a second low line into
+ * `bass` switches those checks off for the voice that most needs them.
+ */
+export type Role = 'melody' | 'bass' | 'tenor' | 'drums' | 'winds' | 'brass';
+export const ROLE_ORDER: readonly Role[] = ['melody', 'bass', 'tenor', 'drums', 'winds', 'brass'];
 
 /**
  * What kind of thing is making the sound. This is a CONSTRAINT class, not a timbre:

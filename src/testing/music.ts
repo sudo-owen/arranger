@@ -1,5 +1,5 @@
 import type { Arrangement, Form, Genome, Key, Meter, Mood, Motif, Palette, Role } from '../core/index.js';
-import { NEUTRAL_MOOD, makeRng, pc } from '../core/index.js';
+import { NEUTRAL_MOOD, TENOR_MOTION_ORDER, makeRng, pc } from '../core/index.js';
 import { loopSeamProblems, violations } from '../critic/index.js';
 import type { FormShape, Hook, Progression, VariationPlan } from '../generate/index.js';
 import {
@@ -30,6 +30,7 @@ export function variedGenome(seed: number, over: Partial<Genome> = {}): Genome {
   const r = makeRng(seed);
   return fixtureGenome({
     bass: { seed: r.int(1e9), walkiness: r.next(), register: r.int(3) - 1 },
+    tenor: { seed: r.int(1e9), motion: r.pick(TENOR_MOTION_ORDER), presence: 0.3 + r.next() * 0.5 },
     drums: { seed: r.int(1e9), fillDensity: 0.3 + r.next() * 0.5, swing: 0 },
     winds: { seed: r.int(1e9), activity: 0.3 + r.next() * 0.5 },
     brass: { seed: r.int(1e9), voicing: 'drop2', density: 0.3 + r.next() * 0.5 },
@@ -86,7 +87,7 @@ export function track(opts: TrackOptions = {}): Track {
   const source = varySource(plain, form, opts.variation, harmony, METER, genome);
   return {
     hook, bars, bpm, source, genome, progression, form,
-    arr: arrange({ harmony, form, meter: METER, source }, genome),
+    arr: arrange({ harmony, form, meter: METER, source, mood }, genome),
   };
 }
 
@@ -96,3 +97,15 @@ export const problemsFor = (t: Track, bpm = t.bpm): string[] =>
 
 export const notesOf = (t: Track, role: Role): Motif['notes'] =>
   t.arr.tracks.find((x) => x.role === role)?.motif.notes ?? [];
+
+/**
+ * A line's identity, with the performance taken out of it.
+ *
+ * Velocity is a function of the form arc and the mood, so two renderings can be the same
+ * music played at different dynamics — which is the point. Comparing raw notes conflates
+ * "a different tune" with "the same tune, shaped", and only the first is ever a bug.
+ */
+export const tune = (notes: Motif['notes']): { start: number; duration: number; pitch: number }[] =>
+  notes.map((n) => ({ start: n.start, duration: n.duration, pitch: n.pitch }));
+
+export const velocities = (notes: Motif['notes']): number[] => notes.map((n) => n.velocity);

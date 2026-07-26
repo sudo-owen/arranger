@@ -20,11 +20,9 @@ import { progressionsFor } from './progressions.js';
  * Mood BIASES the authored take rather than replacing it, so `deform(g, NEUTRAL_MOOD)`
  * is exactly `g` and a busier bed stays relatively busier at every mood.
  *
- * Assigning `lerp(lo, hi, urgency)` instead — which this did first — reads fine and
- * quietly deletes the stage above it: six beds chosen for six different densities all
- * deformed to the same three numbers, and five of six one-field variations collapsed
- * onto their base. Every choice the Bed and Variations stages offer is a genome field
- * mood touches, so overwriting them makes those stages decorative.
+ * It has to bias rather than assign. Every choice the Bed and Variations stages offer is
+ * a genome field mood touches, so `lerp(lo, hi, urgency)` would deform six beds chosen
+ * for six different densities to the same three numbers and make those stages decorative.
  *
  * Total over the unit square: every point yields a renderable genome, so a runtime can
  * never land somewhere unplayable.
@@ -33,14 +31,18 @@ export function deform(base: Genome, mood: Mood): Genome {
   const { urgency: u, fortune: f } = clampMood(mood);
   return {
     ...base,
-    bass: { ...base.bass, walkiness: bias(base.bass.walkiness, u, 0.7) },
+    bass: { ...base.bass, walkiness: bias(base.bass.walkiness, u, 0.85) },
+    // Weight rises as the fight gets heavier AND as it goes badly — the opposite corner
+    // to brass, which comes in on fortune. A desperate scramble gets its low end from
+    // the tenor; a triumphant charge gets it from the brass sitting on top of it.
+    tenor: { ...base.tenor, presence: bias(base.tenor.presence, u * 0.5 + (1 - f) * 0.5, 0.8) },
     drums: {
       ...base.drums,
-      fillDensity: bias(base.drums.fillDensity, u, 0.7),
-      swing: bias(base.drums.swing, 1 - u, 0.24),
+      fillDensity: bias(base.drums.fillDensity, u, 0.85),
+      swing: bias(base.drums.swing, 1 - u, 0.3),
     },
-    winds: { ...base.winds, activity: bias(base.winds.activity, u * 0.65 + f * 0.35, 0.6) },
-    brass: { ...base.brass, density: bias(base.brass.density, f * 0.6 + u * 0.4, 0.7) },
+    winds: { ...base.winds, activity: bias(base.winds.activity, u * 0.65 + f * 0.35, 0.8) },
+    brass: { ...base.brass, density: bias(base.brass.density, f * 0.6 + u * 0.4, 0.85) },
   };
 }
 
@@ -72,7 +74,8 @@ export function layerGains(mood: Mood): Record<Role, number> {
   return {
     melody: 1,
     bass: 1,
-    drums: lerp(0.75, 1, u),
+    tenor: lerp(0.3, 1, u * 0.5 + (1 - f) * 0.5),
+    drums: lerp(0.6, 1, u),
     winds: lerp(0.15, 1, u * 0.7 + (1 - f) * 0.3),
     brass: lerp(0.1, 1, f * 0.75 + u * 0.25),
   };

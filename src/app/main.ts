@@ -1,11 +1,11 @@
-import { PALETTES, PPQ, ROLE_ORDER, barsIn, clampMood, midi, motif, secPerTick, tick } from '../core/index.js';
-import type { Arrangement, Form, Key, Mode, Mood, Motif, SectionLabel } from '../core/index.js';
+import { PALETTES, ROLE_ORDER, barsIn, clampMood, secPerTick } from '../core/index.js';
+import type { Arrangement, Form, Key, Mode, Mood, Motif, Role, SectionLabel } from '../core/index.js';
 import { MOOD_ARCS, MOOD_CORNERS, RHYTHM_LABEL, SCHEME_LABEL, TREATMENTS, describeMood, distinctPitches, formTicks, layerGains, renderHook } from '../generate/index.js';
 import type { MoodArc, VariationPlan } from '../generate/index.js';
 import { Transport } from '../audio/index.js';
 import { parseMidi, toSMF } from '../midi/index.js';
-import { ROLE_COLORS, drawRoll, lineOf, linesOf } from './pianoroll.js';
-import { LENGTH_TARGETS, NOTE_NAMES, STAGES, STAGE_LABEL, Store, chordLabel, keyName } from './state.js';
+import { ROLE_COLORS, drawRoll, lineOf, linesOf, sharedRange } from './pianoroll.js';
+import { LENGTH_TARGETS, NOTE_NAMES, STAGES, STAGE_LABEL, Store, chordLabel, isFallbackSet, keyName } from './state.js';
 import type { AppState, Stage } from './state.js';
 
 // ─── element helpers (no casts; narrow by instanceof) ────────────────────────
@@ -121,8 +121,10 @@ function drawMain(): void {
   if (!c) return;
   const arr = store.current();
   if (!arr) { drawRoll(c, [], 1, store.get().meter); return; }
-  const head = playbackTarget === 'arrangement' && audio?.transport.playing ? lastPos : undefined;
-  drawRoll(c, linesOf(arr), arr.length, store.get().meter, head, lastLen);
+  // Shown whenever the arrangement is loaded, not only while playing: a scrub with the
+  // transport stopped still has to show where it landed.
+  const head = playbackTarget === 'arrangement' ? lastPos : undefined;
+  drawRoll(c, linesOf(arr), arr.length, store.get().meter, { playPos: head, lenSec: lastLen });
 }
 
 function drawSource(): void {
@@ -143,15 +145,26 @@ function renderLegend(): void {
 }
 
 // ─── the rail ────────────────────────────────────────────────────────────────
+/**
+ * Imported material has a source and no hook: nobody chose a cell, and the bed was
+ * arranged automatically over the file's own inferred harmony. The two stages that exist
+ * to make those choices have nothing to offer, so they stop being destinations. `New
+ * hook` in the top bar is the way back out.
+ */
+const listening = (s: AppState): boolean => s.source !== null && s.hook === null;
+
 function reachable(s: AppState, stage: Stage): boolean {
+  if (listening(s)) return stage !== 'hook' && stage !== 'bed';
   return stage === 'hook' || (s.source !== null && s.harmony !== null);
 }
 
 function stageSummary(s: AppState, stage: Stage): string {
   switch (stage) {
     case 'hook':
+      if (listening(s)) return 'imported';
       return s.hook ? `${RHYTHM_LABEL[s.hook.rhythm]} · ${SCHEME_LABEL[s.hook.scheme]}` : '—';
     case 'bed':
+      if (listening(s)) return 'arranged automatically';
       return s.candidates.length ? `${s.candidates.length} candidates` : '—';
     case 'mood':
       return s.source ? `${s.bpm} BPM` : '—';
@@ -202,6 +215,37 @@ function panelHead(stage: Stage, title: string, hint?: string, action?: HTMLElem
   return hint ? [head, h('p', { cls: 'hint', text: hint })] : [head];
 }
 
+const TEMPO_PRESETS = [['Marcia', 140], ['Drive', 155], ['Battle', 168], ['Frantic', 185]] as const;
+
+/**
+ * Tempo, offered wherever it changes what you hear — which includes the Hook stage:
+ * auditioning a cell at 168 and then building the track at 140 is judging the wrong
+ * thing, and the tempo you pick here is the one every later stage inherits.
+ *
+ * It changes no notes at any stage. Generation is a pure function of the genome (§8.5),
+ * so this moves what the critic will accept and what the transport plays, nothing else.
+ *
+ * Commits on `change` rather than `input`: the store re-renders this panel, which would
+ * replace the slider under the cursor mid-drag.
+ */
+function tempoField(s: AppState): HTMLElement {
+  const slider = h('input', { attrs: { type: 'range', min: '90', max: '200', step: '1', value: String(s.bpm) } });
+  const out = h('output', { text: String(s.bpm) });
+  slider.addEventListener('input', () => { out.textContent = slider.value; });
+  slider.addEventListener('change', () => setBpm(Number(slider.value)));
+  return h('label', { cls: 'field bpm-field', text: 'Tempo' }, slider, out);
+}
+
+function tempoPresets(s: AppState): HTMLElement {
+  const presets = h('div', { cls: 'tempo-presets' });
+  for (const [name, value] of TEMPO_PRESETS) {
+    const b = h('button', { cls: value === s.bpm ? 'active' : '', html: `${name} <span>${value}</span>` });
+    b.addEventListener('click', () => setBpm(value));
+    presets.append(b);
+  }
+  return presets;
+}
+
 function renderHookStage(s: AppState, root: HTMLElement): void {
   root.append(...panelHead('hook', 'Hook'));
 
@@ -230,7 +274,9 @@ function renderHookStage(s: AppState, root: HTMLElement): void {
   root.append(h('div', { cls: 'controls' },
     h('label', { cls: 'field', text: 'Key' }, keySel),
     h('label', { cls: 'field', text: 'Mode' }, modeSel),
+    tempoField(s),
     gen));
+  root.append(tempoPresets(s));
 
   const grid = h('div', { cls: 'grid' });
   grid.style.marginTop = '14px';
@@ -241,6 +287,11 @@ function renderHookStage(s: AppState, root: HTMLElement): void {
     grid.textContent = 'Generate a set to begin.';
     return;
   }
+
+  // One vertical scale across the grid: six rolls each scaled to their own contents are
+  // six pictures that cannot be compared with each other, which is what a grid is for.
+  const previews = s.hookDrafts.map((hook) => renderHook(hook, 4));
+  const hookRange = sharedRange(previews.map((p) => lineOf(p, ROLE_COLORS.melody)));
 
   s.hookDrafts.forEach((hook, i) => {
     const card = h('div', { cls: 'card' + (i === s.selectedHookDraft ? ' selected' : '') });
@@ -260,8 +311,9 @@ function renderHookStage(s: AppState, root: HTMLElement): void {
       h('small', { text: `${SCHEME_LABEL[hook.scheme]} · ${distinctPitches(hook)} pitches · ${hook.cellBars} bar${hook.cellBars > 1 ? 's' : ''}` }),
     );
     grid.append(card);
-    const preview = renderHook(hook, 4);
-    requestAnimationFrame(() => drawRoll(mini, lineOf(preview, ROLE_COLORS.melody), preview.length, hook.meter));
+    const preview = previews[i]!;
+    requestAnimationFrame(() =>
+      drawRoll(mini, lineOf(preview, ROLE_COLORS.melody), preview.length, hook.meter, { range: hookRange }));
   });
 }
 
@@ -290,12 +342,18 @@ function renderBedStage(s: AppState, root: HTMLElement): void {
 
   root.append(...panelHead('bed', `Bed — ${barsOf(s)} bars`, undefined, gen));
 
+  if (isFallbackSet(s.candidates)) {
+    root.append(h('p', { cls: 'notice warn' },
+      document.createTextNode('None of these passed the critic — they are shown so you can hear them rather than leaving you with nothing. A slower tempo usually fixes it.')));
+  }
+
   const grid = h('div', { cls: 'grid' });
   root.append(grid);
   if (!s.candidates.length) {
     grid.className = 'empty-note';
     grid.textContent = 'Generate a set to begin.';
   } else {
+    const bedRange = sharedRange(s.candidates.map((c) => linesOf(c.arr)));
     s.candidates.forEach((cand, i) => {
       const pinned = s.pinned.some((p) => p.genome === cand.genome);
       const card = h('div', { cls: 'card' + (i === s.selected ? ' selected' : '') });
@@ -315,7 +373,7 @@ function renderBedStage(s: AppState, root: HTMLElement): void {
         h('small', { text: cand.label ? palette.label : prog ? prog.blurb : palette.blurb }),
       );
       grid.append(card);
-      requestAnimationFrame(() => drawRoll(mini, linesOf(cand.arr), cand.arr.length, s.meter));
+      requestAnimationFrame(() => drawRoll(mini, linesOf(cand.arr), cand.arr.length, s.meter, { range: bedRange }));
     });
   }
   if (s.candidates.length) {
@@ -372,16 +430,26 @@ function renderMoodStage(s: AppState, root: HTMLElement): void {
   // on a debounce after the cursor settles, the fight on how far the mood has travelled.
   const rearrange = (m: Mood): void => {
     const next = store.arrangeForMood(m);
-    if (next) audio?.transport.swapAtBoundary(next.arr, store.get().bpm, store.get().meter);
+    if (!next) return;
+    paintDelta(next.arr);
+    if (audio?.transport.playing && playbackTarget === 'arrangement') {
+      audio.transport.swapAtBoundary(next.arr, store.get().bpm, store.get().meter);
+    }
   };
   let queued = false;
   let rearrangeAt: ReturnType<typeof setTimeout> | null = null;
   const preview = (): void => {
     if (!queued) {
       queued = true;
-      requestAnimationFrame(() => { queued = false; audio?.transport.setLayerGains(layerGains(live)); });
+      requestAnimationFrame(() => {
+        queued = false;
+        paintGains(live);
+        audio?.transport.setLayerGains(layerGains(live));
+      });
     }
-    if (!audio?.transport.playing || playbackTarget !== 'arrangement') return;
+    // The debounce runs whether or not anything is playing: the deltas are the half of
+    // this you can read with the sound off, and they cost the same arrangement the swap
+    // would have needed anyway.
     if (rearrangeAt !== null) clearTimeout(rearrangeAt);
     rearrangeAt = setTimeout(() => { rearrangeAt = null; rearrange(live); }, 200);
   };
@@ -433,6 +501,7 @@ function renderMoodStage(s: AppState, root: HTMLElement): void {
       startFight(arc, (m) => {
         live = m;
         place(m);
+        paintGains(m);
         audio?.transport.setLayerGains(layerGains(m));
         if (Math.hypot(m.urgency - lastArranged.urgency, m.fortune - lastArranged.fortune) < 0.18) return;
         lastArranged = m;
@@ -445,14 +514,46 @@ function renderMoodStage(s: AppState, root: HTMLElement): void {
   paintArcs();
   root.append(arcs, arcHint);
 
-  root.append(h('p', { cls: 'side-title', text: 'Reroll one voice' }));
+  root.append(h('p', { cls: 'side-title', text: 'Voices' }),
+    h('p', { cls: 'hint', text: 'Bar is the live mix. Figure is how far the pad has moved that voice off the take you authored.' }));
+  const meters = new Map<Role, { fill: HTMLElement; delta: HTMLElement }>();
   for (const role of ROLE_ORDER) {
     const swatch = h('span', { cls: 'sw' });
     swatch.style.background = ROLE_COLORS[role];
-    const roll = h('button', { cls: 'small', text: '⟳ reroll' });
+    const fill = h('i');
+    fill.style.background = ROLE_COLORS[role];
+    const delta = h('span', { cls: 'delta', text: '·' });
+    const roll = h('button', { cls: 'small', text: '⟳', attrs: { title: `Reroll ${role}` } });
     roll.addEventListener('click', () => store.rerollVoice(role));
-    root.append(h('div', { cls: 'layerrow' }, swatch, h('span', { cls: 'nm', text: role }), roll));
+    meters.set(role, { fill, delta });
+    root.append(h('div', { cls: 'voicerow' },
+      swatch, h('span', { cls: 'nm', text: role }), h('span', { cls: 'meter' }, fill), delta, roll));
   }
+
+  const paintGains = (m: Mood): void => {
+    const g = layerGains(m);
+    for (const [role, row] of meters) row.fill.style.width = `${Math.round(g[role] * 100)}%`;
+  };
+
+  const authored = store.authoredArrangement();
+  const notesIn = (a: Arrangement, role: Role): number =>
+    a.tracks.find((t) => t.role === role)?.motif.notes.length ?? 0;
+  const paintDelta = (a: Arrangement): void => {
+    if (!authored) return;
+    for (const [role, row] of meters) {
+      const base = notesIn(authored, role);
+      const now = notesIn(a, role);
+      // A voice the pad has switched on has no percentage to report — 0 → 6 is not
+      // "+600%", it is six notes that were not there.
+      row.delta.textContent = base === 0 ? (now === 0 ? '·' : `+${now}`)
+        : now === base ? '—'
+        : `${now > base ? '+' : '−'}${Math.abs(Math.round(((now - base) / base) * 100))}%`;
+      row.delta.className = `delta${now > base ? ' up' : now < base ? ' down' : ''}`;
+    }
+  };
+  paintGains(live);
+  const shown = store.current();
+  if (shown) paintDelta(shown);
 
   const report = store.moodCornerReport();
   const bad = report.filter((c) => c.problems.length);
@@ -463,23 +564,13 @@ function renderMoodStage(s: AppState, root: HTMLElement): void {
       : `Playable at all four corners: ${report.map((c) => c.label).join(', ')}.`,
   }));
 
-  const bpm = h('input', { attrs: { type: 'range', min: '90', max: '200', step: '1', value: String(s.bpm) } });
-  const bpmVal = h('span', { cls: 'val', text: String(s.bpm) });
-  bpm.addEventListener('input', () => { bpmVal.textContent = bpm.value; });
-  bpm.addEventListener('change', () => setBpm(Number(bpm.value)));
   const vol = h('input', { attrs: { type: 'range', min: '0', max: '100', value: '85' } });
   vol.addEventListener('input', () => audio?.transport.setVolume(Number(vol.value) / 100));
-  root.append(h('div', { cls: 'knobs' },
-    h('label', { text: 'Tempo' }, bpm, bpmVal),
-    h('label', { text: 'Level' }, vol, h('span', { cls: 'val' }))));
-
-  const presets = h('div', { cls: 'tempo-presets' });
-  for (const [name, value] of [['Marcia', 140], ['Drive', 155], ['Battle', 168], ['Frantic', 185]] as const) {
-    const b = h('button', { cls: value === s.bpm ? 'active' : '', html: `${name} <span>${value}</span>` });
-    b.addEventListener('click', () => setBpm(value));
-    presets.append(b);
-  }
-  root.append(presets, mainPlayer(s));
+  root.append(
+    h('div', { cls: 'controls' }, tempoField(s)),
+    tempoPresets(s),
+    h('div', { cls: 'knobs' }, h('label', { text: 'Level' }, vol, h('span', { cls: 'val' }))),
+    mainPlayer(s));
 }
 
 // Concrete hexes from ROLE_COLORS, not CSS variables: the canvas needs values anyway,
@@ -562,7 +653,9 @@ function renderVaryStage(s: AppState, root: HTMLElement): void {
     'Percentages are the share of that section’s notes the treatment moved.'));
 
   if (!s.form || !s.candidates[s.selected]) {
-    root.append(emptyNote('Commit a form first.'));
+    // Export still belongs here. Imported material arrives with no form and no hook, and
+    // "I just want the MIDI out" is the entire reason that path exists.
+    root.append(emptyNote('Commit a form first.'), exportBlock(s));
     return;
   }
   if (s.hook) {
@@ -621,15 +714,74 @@ function renderVaryStage(s: AppState, root: HTMLElement): void {
     }
     bench.append(row);
   }
-  root.append(bench, mainPlayer(s));
+  root.append(bench, mainPlayer(s), exportBlock(s));
+}
+
+/**
+ * The end of the flow is an export, not a stage you fall off.
+ *
+ * `song.json` leads because it is what the game actually wants — a few hundred bytes the
+ * runtime re-renders at any mood — where the `.mid` is for taking into a DAW. Burying
+ * both in a drawer labelled "Advanced" put the one unavoidable step of the whole
+ * workflow behind a disclosure triangle.
+ */
+function exportBlock(s: AppState): HTMLElement {
+  const arranged = Boolean(s.candidates[s.selected]);
+  // A spec rebuilds the track FROM the hook, so material that never had one — anything
+  // imported — can only leave as notes. Saying so beats a button that reports it as an
+  // error after you press it.
+  const shippable = arranged && store.songSpec() !== null;
+
+  const spec = h('button', { cls: 'primary', text: 'Export song.json' });
+  spec.addEventListener('click', exportSpecFile);
+  spec.disabled = !shippable;
+  const mid = h('button', { cls: 'ghost', text: 'Export MIDI' });
+  mid.addEventListener('click', exportMidi);
+  mid.disabled = !arranged;
+
+  const box = h('div', { cls: 'export-block' });
+  box.append(
+    h('p', { cls: 'side-title', text: 'Ship it' }),
+    h('div', { cls: 'controls' }, spec, mid),
+    h('p', {
+      cls: 'hint',
+      text: shippable
+        ? 'song.json is what munch vendors — hook, genome and tempo, re-rendered at whatever mood the fight is at. Drop it in themes/ and run npm run ship; the filename becomes the theme id. The .mid is the same track frozen at the current mood, for a DAW.'
+        : 'Imported material has no hook to rebuild from, so it can only leave as MIDI. Generate a hook to export a song.json the game can re-render at any mood.',
+    }),
+  );
+  return box;
 }
 
 function mainPlayer(s: AppState): HTMLElement {
   const wrap = h('div');
   wrap.style.marginTop = '16px';
   wrap.append(h('p', { cls: 'side-title', text: 'Selected arrangement' }));
-  const c = h('canvas', { cls: 'roll roll-main', attrs: { id: 'mainRoll' } });
+  const c = h('canvas', { cls: 'roll roll-main scrub', attrs: { id: 'mainRoll' } });
   wrap.append(c);
+
+  // Scrub. The roll is already a timeline with a playhead on it, so the affordance the
+  // picture implies should work — and skipping to the bar you just changed is most of
+  // what auditioning a 90-second track involves.
+  const seekTo = (e: PointerEvent): void => {
+    const arr = store.current();
+    if (!arr) return;
+    const r = c.getBoundingClientRect();
+    const at = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const { transport } = ensureAudio();
+    if (playbackTarget !== 'arrangement') {
+      stopPlayback();
+      transport.loop = true;
+      transport.load(arr, store.get().bpm);
+      playbackTarget = 'arrangement';
+    }
+    transport.seek(at * arr.length * secPerTick(store.get().bpm));
+    lastPos = transport.positionSec;
+    lastLen = arr.length * secPerTick(store.get().bpm);
+    drawMain();
+  };
+  c.addEventListener('pointerdown', (e) => { c.setPointerCapture(e.pointerId); seekTo(e); });
+  c.addEventListener('pointermove', (e) => { if (c.hasPointerCapture(e.pointerId)) seekTo(e); });
 
   // Selecting a bed starts playback, so this button is rebuilt mid-play — it has to read
   // the transport rather than assume a stopped one.
@@ -762,11 +914,15 @@ function render(s: AppState): void {
   button('stageBack').disabled = at === 0;
   const next = button('stageNext');
   if (s.stage === 'hook') {
-    next.textContent = 'Use this hook →';
+    next.replaceChildren(document.createTextNode('→'), h('span', { text: 'use this hook' }));
     next.disabled = s.selectedHookDraft < 0;
+  } else if (at === STAGES.length - 1) {
+    // Nothing follows the last stage but the thing the whole flow is for.
+    next.replaceChildren(document.createTextNode('↓'), h('span', { text: 'export' }));
+    next.disabled = !s.candidates[s.selected];
   } else {
-    next.textContent = 'continue →';
-    next.disabled = at === STAGES.length - 1;
+    next.replaceChildren(document.createTextNode('→'), h('span', { text: 'next' }));
+    next.disabled = false;
   }
 }
 
@@ -813,20 +969,14 @@ function setBpm(bpm: number): void {
   }
 }
 
-// ─── a built-in melody so the app works with zero setup ──────────────────────
-function demoMotif(): Motif {
-  const q = PPQ;
-  const pitches = [67, 64, 60, 64, 65, 67, 69, 67, 64, 65, 67, 72, 71, 67, 64, 60];
-  const notes = pitches.map((p, i) => ({ start: tick(i * q), duration: tick(i === pitches.length - 1 ? q * 2 : q), pitch: midi(p), velocity: 96 }));
-  return motif(notes, tick(16 * q));
-}
-
 // ─── wiring ──────────────────────────────────────────────────────────────────
 el('stageBack').addEventListener('click', () => { stopPlayback(); store.step(-1); });
 el('stageNext').addEventListener('click', () => {
+  const { stage } = store.get();
+  if (stage === 'hook') { stopPlayback(); store.useSelectedHook(); return; }
+  if (stage === STAGES[STAGES.length - 1]) { exportSpecFile(); return; }
   stopPlayback();
-  if (store.get().stage === 'hook') store.useSelectedHook();
-  else store.step(1);
+  store.step(1);
 });
 
 input('file').addEventListener('change', (e) => {
@@ -839,18 +989,20 @@ input('file').addEventListener('change', (e) => {
     try {
       const parsed = parseMidi(buf);
       store.loadSource(parsed.motif, parsed.bpm, parsed.meter);
-      store.setStage('bed');
+      // Imported material arrives with a tune already chosen, so the generative half of
+      // the flow has nothing to ask. Arrange it over its own inferred harmony and open at
+      // the pad, which is the one thing you actually came here to do to someone else's
+      // track: hear how it moves. The rail stays live as the way back into generating.
+      store.generateBeds(6);
+      store.setStage('mood');
     } catch (err) {
       store.setStatus(`Could not read that MIDI file: ${err instanceof Error ? err.message : 'unknown error'}`);
     }
   }).catch(() => store.setStatus('Could not read that file.'));
 });
 
-el('demo').addEventListener('click', () => {
-  stopPlayback();
-  store.loadSource(demoMotif(), 168, { num: 4, den: 4 }, 'Classic demo', 'import');
-  store.setStage('bed');
-});
+// The way out of listen mode: drop the imported material and start choosing again.
+el('newHook').addEventListener('click', () => { stopPlayback(); store.startCompose(); });
 el('extend').addEventListener('click', () => {
   if (!store.get().source) { store.setStatus('Commit a hook before extending.'); return; }
   stopPlayback();
@@ -863,18 +1015,19 @@ const temp = input('temp');
 temp.addEventListener('input', () => { el('tempVal').textContent = (Number(temp.value) / 100).toFixed(2); });
 temp.addEventListener('change', () => store.setTemperature(Number(temp.value) / 100));
 
-el('export').addEventListener('click', () => {
+function exportMidi(): void {
   const arr = store.current();
   if (!arr) { store.setStatus('Nothing to export yet — generate a bed first.'); return; }
   download('battle-theme.mid', new Blob([new Uint8Array(toSMF(arr, store.get().bpm, store.get().meter))], { type: 'audio/midi' }));
-});
+  store.setStatus('Exported battle-theme.mid.');
+}
 
-el('exportSpec').addEventListener('click', () => {
+function exportSpecFile(): void {
   const spec = store.songSpec();
   if (!spec) { store.setStatus('Commit a hook and select a bed first.'); return; }
   download('battle-theme.json', new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' }));
   store.setStatus('Exported song.json — the game rebuilds the track from this at any mood.');
-});
+}
 
 function download(name: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);

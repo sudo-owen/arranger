@@ -49,7 +49,7 @@ export function barsIn(length: number, meter: Meter): number {
 
 /**
  * Seconds per tick — the single conversion between the engine's tick domain and the
- * audio clock. It was open-coded as `60 / bpm / PPQ` at five sites, unnamed at four.
+ * audio clock. Named rather than open-coded, so the conversion has one definition.
  */
 export function secPerTick(bpm: number): number {
   return 60 / bpm / PPQ;
@@ -62,8 +62,15 @@ export function weightAt(t: Tick, meter: Meter, weights: readonly number[]): num
   return w === undefined ? 0 : w;
 }
 
+// Called per note by the dynamics pass and by every operator that reads metric weight,
+// so the grid's max is cached against the array rather than rescanned each time.
+const maxima = new WeakMap<readonly number[], number>();
+
 export function normWeightAt(t: Tick, meter: Meter, weights: readonly number[]): number {
-  let max = 0;
-  for (const w of weights) if (w > max) max = w;
+  let max = maxima.get(weights);
+  if (max === undefined) {
+    max = weights.reduce((a, w) => (w > a ? w : a), 0);
+    maxima.set(weights, max);
+  }
   return max === 0 ? 0 : weightAt(t, meter, weights) / max;
 }

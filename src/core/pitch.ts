@@ -32,10 +32,6 @@ export function isChordTone(pitch: Midi, chord: Chord): boolean {
   return chordPCs(chord).some((p) => p === target);
 }
 
-export function isDiatonic(pitch: Midi, key: Key): boolean {
-  return scaleSteps(key.mode).includes(mod12(pc(pitch) - key.tonic));
-}
-
 /**
  * Chromatic transposition — plain semitone add. No range clamp: MIDI validity is
  * a render-time concern (spec §8.5), and clamping here would break the algebraic

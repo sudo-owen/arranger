@@ -1,12 +1,12 @@
 import type { Genome, Role, Rng } from '../core/index.js';
-import { PALETTE_ORDER, VOICING_ORDER, clamp01 } from '../core/index.js';
+import { PALETTE_ORDER, TENOR_MOTION_ORDER, VOICING_ORDER, clamp01 } from '../core/index.js';
 
 /**
  * Small edits to one genome, so every choice is between close relatives.
  *
- * The complaint this answers: a fresh random pool gives six strangers, and picking
- * between strangers tells you nothing about the one you already liked. Changing
- * exactly one field at a time means the difference you hear is the field.
+ * A fresh random pool gives six strangers, and picking between strangers tells you
+ * nothing about the one you already liked. Changing exactly one field at a time means
+ * the difference you hear is the field.
  */
 
 export interface Neighbour {
@@ -25,6 +25,8 @@ const TWEAKS: readonly Tweak[] = [
   { label: 'swing', apply: (g, r) => ({ ...g, drums: { ...g.drums, swing: nudge(g.drums.swing, r, 0.3) } }) },
   { label: 'walking bass', apply: (g, r) => ({ ...g, bass: { ...g.bass, walkiness: nudge(g.bass.walkiness, r) } }) },
   { label: 'bass register', apply: (g, r) => ({ ...g, bass: { ...g.bass, register: r.int(3) - 1 } }) },
+  { label: 'low weight', apply: (g, r) => ({ ...g, tenor: { ...g.tenor, presence: nudge(g.tenor.presence, r) } }) },
+  { label: 'tenor motion', apply: (g, r) => ({ ...g, tenor: { ...g.tenor, motion: r.pick(TENOR_MOTION_ORDER) } }) },
   { label: 'wind activity', apply: (g, r) => ({ ...g, winds: { ...g.winds, activity: nudge(g.winds.activity, r) } }) },
   { label: 'brass density', apply: (g, r) => ({ ...g, brass: { ...g.brass, density: nudge(g.brass.density, r) } }) },
   { label: 'brass voicing', apply: (g, r) => ({ ...g, brass: { ...g.brass, voicing: r.pick(VOICING_ORDER) } }) },
@@ -41,14 +43,15 @@ export function neighbours(base: Genome, rng: Rng, k: number): Neighbour[] {
 }
 
 /**
- * A new seed for one role, leaving every other role byte-identical — the property
- * `arrange()` has always had and nothing has used until now.
+ * A new seed for one role, leaving every other role byte-identical — the per-role seed
+ * DAG in `arrange()`, exposed as an edit.
  */
 export function rerollRole(base: Genome, role: Role, rng: Rng): Genome {
   const seed = rng.int(1_000_000_000);
   switch (role) {
     case 'melody': return { ...base, melody: { ...base.melody, seed } };
     case 'bass': return { ...base, bass: { ...base.bass, seed } };
+    case 'tenor': return { ...base, tenor: { ...base.tenor, seed } };
     case 'drums': return { ...base, drums: { ...base.drums, seed } };
     case 'winds': return { ...base, winds: { ...base.winds, seed } };
     case 'brass': return { ...base, brass: { ...base.brass, seed } };
