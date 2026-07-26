@@ -1,9 +1,11 @@
-# Arrange — generative arrangement engine
+# Arrange — generative battle music
 
-Implementation of the spec v1.0. Turns a melody into a full tonal arrangement —
-bass, drums, woodwinds, brass, extended melody — over an **owned** chord
-progression, as (mostly) pure functions of a ~40-byte genome. Ships with a native
-WebAudio app so you can hear it, correct the harmony, and A/B candidates.
+Builds a loopable battle theme from a short hook: pick a motif, pick the arrangement
+around it, grow it into a track, export MIDI. Aimed at a chiptune/orchestral hybrid at
+140–185 BPM, for the turn-based game in `snack/munch`.
+
+Everything is a (mostly) pure function of a ~40-byte genome, so the same genome always
+yields the same notes.
 
 ## Run
 
@@ -11,13 +13,30 @@ WebAudio app so you can hear it, correct the harmony, and A/B candidates.
 npm install
 npm run dev        # Vite dev server — open the printed URL
 npm run build      # typecheck (both boundaries) + production bundle -> dist/
-npm test           # 64 unit/property/golden tests
+npm test           # unit / property / golden tests
 npm run typecheck  # tsc over the pure packages, then the app layer
+npm run vendor:engine  # copy the DOM-free engine into munch
+npm run vendor:check   # fail if munch's copy has drifted
 ```
 
-In the app: **Try a demo melody** (or **Load MIDI**) -> the key and chords are
-inferred -> correct any chord (click cycles it; shift-click steps back) -> **Generate**
-a diverse set -> **Play** and click cards to hot-swap between them -> **Export MIDI**.
+## The flow
+
+Five stages, one choice each:
+
+1. **Hook** — six short cells, each a battle rhythm plus a way of restating it
+   (repeat, sequence up/down, call-and-answer, ostinato). Constrained to 3–5 distinct
+   pitches, because a hook you can hum is a hook with few notes in it.
+2. **Bed** — the same hook arranged six ways over six progressions. The melody seed is
+   held constant, so you are judging orchestration, not comparing six different tunes.
+3. **Mood** — a 2-D urgency × fortune pad. Drag it and the arrangement deforms live;
+   the hook never moves. Reports whether the bed survives all four corners.
+4. **Form** — grow the bed into a 30/60/90 s track with a real arc
+   (`intro · A · A' · B · A" · tag`). Sections are whole phrases and the total is a
+   multiple of the progression, so the loop joins cleanly.
+5. **Vary** — how the hook differs on each return. Phase 5.
+
+MIDI import and hand-editing the inferred chord progression live in the **Advanced**
+drawer. `PLAN-battle-mode.md` tracks what is built and what is next.
 
 ## Architecture
 
@@ -25,44 +44,47 @@ Two layers, enforced by two tsconfigs.
 
 **Pure engine** (`tsconfig.json` — no DOM; `any`/`as` banned outside brand constructors):
 
-- **`core`** — branded primitives (`Tick`/`Midi`/`PC`/`Degree`), the data model
-  (Note, Motif, Chord/Harmony, Form, Genome, Arrangement), pitch/meter math, the
-  §7.1 metric-weight grid, the 7-operator algebra, the §8.5 instrument-range table,
-  and a seeded **sfc32** RNG with label-based `fork` (fixes the §8.2 child-independence bug).
+- **`core`** — branded primitives (`Tick`/`Midi`/`PC`/`Degree`), the data model, pitch
+  and meter math, the §7.1 metric-weight grid, the 7-operator algebra, the instrument
+  table (ranges, articulation ceilings, voice classes, palettes), the shared **timbre
+  table** both renderers read, and a seeded sfc32 RNG with label-based `fork`.
 - **`theory`** — Krumhansl–Schmuckler key detection, Müllensiefen step-contour
-  similarity (the melody floor), roman-numeral/degree helpers, cadence classification,
-  NCT reduction, and 4-way voicing (close / drop-2 / drop-3).
-- **`generate`** — the **HMM harmony inference** (Viterbi for the shown progression,
-  FFBS + temperature for variation — §7.2), the per-role generators (bass, melody,
-  drums, winds, brass — §7.4), and `arrange()` wiring the per-role seed DAG (§8.1).
-- **`critic`** — hard-constraint checking (range, articulation rate, phrase length,
-  the contour floor — §7.5) and MMR diversity selection (§7.6).
+  similarity, roman-numeral helpers, cadence classification, NCT reduction, 4-way voicing.
+- **`generate`** — the **hook** generator, the **progression library**, HMM harmony
+  inference (Viterbi + FFBS), the per-role generators, and `arrange()` wiring the
+  per-role seed DAG.
+- **`critic`** — hard-constraint checking (range, articulation, breath, contour floor)
+  and MMR diversity selection.
 
-**App layer** (`tsconfig.app.json` — adds DOM; imports the pure engine):
+**App layer** (`tsconfig.app.json` — adds DOM):
 
-- **`midi`** — hand-rolled Standard MIDI File reader and writer (zero deps).
-- **`audio`** — the two-clock transport (setInterval scheduling ahead of the
-  sample-accurate `AudioContext` clock — §9.1) with loop and mid-phrase hot-swap
-  (§9.3), plus a per-role WebAudio synth.
-- **`app`** — vanilla-TS UI: a single `Store`, a role-coloured canvas piano-roll,
-  the editable chord strip, and the candidate grid.
+- **`midi`** — hand-rolled SMF reader and writer, zero deps. Export stamps each track
+  with the GM program its timbre declares; that number is how munch recovers the voice.
+- **`audio`** — the two-clock transport (`setInterval` scheduling ahead of the
+  sample-accurate `AudioContext` clock) with two hot-swaps: `swapTo` (immediate) and
+  `swapAtBoundary` (next bar line, ringing voices left alone), plus a synth that holds
+  no tone decisions of its own — every number comes from `core/timbre.ts`.
+- **`app`** — vanilla-TS UI: a single `Store`, the stage rail, a role-coloured canvas
+  piano-roll, snapshot-based branching history, and a pin tray.
 
-The central inversion (§3.3): the melody->chords arrow runs **once**, at import. After
-that, harmony is owned data and the melody is generated *against* it. Structure is
-deterministic; only the harmony sampler is stochastic (temperature over the HMM
-posterior). Same genome -> same arrangement, always.
+**Shipping to the game.** `song.json` is a `SongSpec` — hook, genome, tempo, ~3 KB — and
+`renderSong(spec, mood)` rebuilds the arrangement at any point in the mood square. munch
+vendors the engine (`npm run vendor:engine`) and calls that directly, so the game ships a
+few hundred bytes instead of a bank of stems, and hears exactly what was auditioned here.
+
+Two inversions worth knowing. Harmony is **owned**, not inferred — it comes from a
+chosen progression, and the melody is generated against it. And instruments constrain
+generation while **tempo never enters it**: the critic checks the result against the
+real BPM afterwards, and `GENERATION_REF_BPM` names the one assumption generation makes.
 
 ## Design
 
-Five orchestral roles -> five hues, reused across the legend, chord strip, piano-rolls,
-and candidate cards, so colour encodes voice everywhere. Graphite-blue workstation
-surface; Space Grotesk for display, IBM Plex Mono for data.
+Five orchestral roles → five hues, reused across the legend, chord strip, piano-rolls
+and cards, so colour encodes voice everywhere. Graphite-blue workstation surface;
+Instrument Sans for display, DM Mono for data, Bodoni Moda for the wordmark.
 
-## Not yet built (beyond M0–M2)
+## Not yet built
 
-The form/extension **sentence algorithm** (§7.3), so generation currently arranges over
-the inferred span rather than growing new phrases; the two harmonic hard-rejects that
-need voice separation (inner-voice dissonance on weight-4 beats, outer-voice parallels
-— §7.5); chord-tone-aware **ornament** quality and the radius->operator-chain reroll loop
-(the taste-critical §13.2 work); breeding/locks UI, IndexedDB persistence, a generation
-Web Worker, and a sampled soundfont in place of the synth.
+The two harmonic hard-rejects that need voice separation (§7.5); per-recurrence
+variation chains (Phase 5); mapping real battle state onto the mood axes, and flipping
+`MUSIC_DISABLED` so any of it is audible in game (Phase 6); IndexedDB persistence.

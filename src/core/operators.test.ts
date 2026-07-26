@@ -1,5 +1,5 @@
 import fc from 'fast-check';
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PPQ, midi, pc, tick } from './brand.js';
 import { makeRng } from './rng.js';
 import { WEIGHTS_4_4 } from './meter.js';
@@ -7,7 +7,7 @@ import { motif } from './motif.js';
 import type { Motif, Note } from './types.js';
 import {
   type Context,
-  augment, displace, invert, octave, ornament, sequence, thin,
+  augment, displace, invert, isStructural, octave, ornament, sequence, thin,
 } from './operators.js';
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
@@ -119,5 +119,17 @@ describe('sequence', () => {
         && three.length === tick(m.length * 3)
         && three.notes.length === m.notes.length * 3;
     }));
+  });
+});
+
+describe('isStructural', () => {
+  const note = (start: number, duration: number): Note =>
+    ({ start: tick(start), duration: tick(duration), pitch: midi(60), velocity: 96 });
+
+  it('is what the brass voicer harmonises: strong beats, long notes, phrase edges', () => {
+    expect(isStructural(note(0, STEP), CTX)).toBe(true);            // downbeat
+    expect(isStructural(note(STEP, STEP), CTX)).toBe(false);        // weak, short
+    expect(isStructural(note(STEP, PPQ), CTX)).toBe(true);          // weak, but held a beat
+    expect(isStructural(note(STEP, STEP), CTX, true)).toBe(true);   // phrase edge
   });
 });

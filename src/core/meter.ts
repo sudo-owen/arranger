@@ -26,17 +26,35 @@ export function weightsFor(meter: Meter): readonly number[] {
 
 const sixteenth = (): number => PPQ / 4;
 
-/** Ticks per bar. */
 export function barTicks(meter: Meter): number {
   return (meter.num * (PPQ * 4)) / meter.den;
 }
 
-/** Ticks per beat. */
 export function beatTicks(meter: Meter): number {
   return (PPQ * 4) / meter.den;
 }
 
-/** Raw metric weight at a tick — indexes the grid by 16th-note position in the bar. */
+export function sixteenthsPerBar(meter: Meter): number {
+  return barTicks(meter) / sixteenth();
+}
+
+export function beatInBar(t: number, meter: Meter): number {
+  const bar = barTicks(meter);
+  return Math.floor((((t % bar) + bar) % bar) / beatTicks(meter));
+}
+
+export function barsIn(length: number, meter: Meter): number {
+  return Math.max(1, Math.round(length / barTicks(meter)));
+}
+
+/**
+ * Seconds per tick — the single conversion between the engine's tick domain and the
+ * audio clock. It was open-coded as `60 / bpm / PPQ` at five sites, unnamed at four.
+ */
+export function secPerTick(bpm: number): number {
+  return 60 / bpm / PPQ;
+}
+
 export function weightAt(t: Tick, meter: Meter, weights: readonly number[]): number {
   const bar = barTicks(meter);
   const posInBar = ((t % bar) + bar) % bar;
@@ -44,7 +62,6 @@ export function weightAt(t: Tick, meter: Meter, weights: readonly number[]): num
   return w === undefined ? 0 : w;
 }
 
-/** Metric weight normalised to 0–1 relative to the grid maximum. */
 export function normWeightAt(t: Tick, meter: Meter, weights: readonly number[]): number {
   let max = 0;
   for (const w of weights) if (w > max) max = w;

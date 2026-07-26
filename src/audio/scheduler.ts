@@ -1,6 +1,7 @@
-import type { Arrangement, Meter, TimbreName } from '../core/index.js';
-import { MASTER_CEILING, PPQ, barTicks, timbreNameFor } from '../core/index.js';
-import { scheduleVoice } from './synth.js';
+import type { Arrangement, Meter, Role } from '../core/index.js';
+import { MASTER_CEILING, ROLE_ORDER, barTicks, secPerTick } from '../core/index.js';
+import type { FlatEvent } from '../render/index.js';
+import { flatten, scheduleVoice } from '../render/index.js';
 
 /**
  * The transport (spec §9.1). Two clocks: a coarse setInterval wakes every ~25ms and
@@ -14,26 +15,6 @@ import { scheduleVoice } from './synth.js';
  *   material at the next bar line. Right for anything the listener shouldn't notice
  *   as an edit, which is every in-game mood transition.
  */
-interface FlatEvent {
-  time: number; // seconds from loop start
-  timbre: TimbreName | null; // null = percussion
-  pitch: number;
-  velocity: number;
-  durSec: number;
-}
-
-function flatten(arr: Arrangement, bpm: number): FlatEvent[] {
-  const spt = 60 / bpm / PPQ;
-  const evs: FlatEvent[] = [];
-  for (const tr of arr.tracks) {
-    const timbre = tr.instrument ? timbreNameFor(tr.instrument) : null;
-    for (const n of tr.motif.notes) {
-      evs.push({ time: n.start * spt, timbre, pitch: n.pitch, velocity: n.velocity, durSec: Math.max(0.03, n.duration * spt) });
-    }
-  }
-  return evs.sort((a, b) => a.time - b.time);
-}
-
 /**
  * The first bar line strictly beyond the lookahead window, measured from the current
  * pass origin. This is the whole trick behind a seamless swap: because nothing past
@@ -57,22 +38,40 @@ export class Transport {
   private readonly lookahead = 0.1;
   private readonly intervalMs = 25;
   private readonly master: GainNode;
+  private readonly layers = new Map<Role, GainNode>();
   loop = true;
   onTick: ((posSec: number, lenSec: number) => void) | null = null;
 
   constructor(private readonly ctx: AudioContext) {
     this.master = ctx.createGain();
-    this.master.gain.value = MASTER_CEILING * 0.85;
     // Compressor to match munch's chain — the same mix through different gain staging
     // lands at a different level, and level differences read as tone differences.
     const comp = ctx.createDynamicsCompressor();
     this.master.connect(comp);
     comp.connect(ctx.destination);
+    this.setVolume(0.85);
+    for (const role of ROLE_ORDER) {
+      const g = ctx.createGain();
+      g.connect(this.master);
+      this.layers.set(role, g);
+    }
+  }
+
+  /**
+   * The vertical half of the adaptive mix, and the reason it lives here rather than
+   * only in the game: without it the author hears every voice at full while the game
+   * plays winds 16 dB down, and no amount of note-level checking catches that.
+   */
+  setLayerGains(gains: Record<Role, number>, glideSec = 0.08): void {
+    for (const role of ROLE_ORDER) {
+      const node = this.layers.get(role);
+      if (node) node.gain.linearRampToValueAtTime(gains[role], this.ctx.currentTime + glideSec);
+    }
   }
 
   load(arr: Arrangement, bpm: number): void {
     this.events = flatten(arr, bpm);
-    this.loopLenSec = Math.max(0.001, arr.length * (60 / bpm / PPQ));
+    this.loopLenSec = Math.max(0.001, arr.length * secPerTick(bpm));
     this.cursorSec = 0;
     this.idx = 0;
   }
@@ -94,21 +93,6 @@ export class Transport {
     const next = this.events.findIndex((event) => event.time >= this.cursorSec);
     this.idx = next < 0 ? this.events.length : next;
     this.timer = setInterval(() => this.schedule(), this.intervalMs);
-  }
-
-  pause(): void {
-    if (!this.playing) return;
-    this.cursorSec = this.positionSec;
-    this.halt();
-  }
-
-  seek(positionSec: number): void {
-    const wasPlaying = this.playing;
-    if (wasPlaying) this.halt();
-    this.cursorSec = Math.max(0, Math.min(this.loopLenSec, positionSec));
-    const next = this.events.findIndex((event) => event.time >= this.cursorSec);
-    this.idx = next < 0 ? this.events.length : next;
-    if (wasPlaying) this.play();
   }
 
   stop(): void {
@@ -154,7 +138,7 @@ export class Transport {
    */
   swapAtBoundary(arr: Arrangement, bpm: number, meter: Meter): number | null {
     if (!this.playing) { this.load(arr, bpm); return null; }
-    const spt = 60 / bpm / PPQ;
+    const spt = secPerTick(bpm);
     const nextLen = Math.max(0.001, arr.length * spt);
     const barSec = barTicks(meter) * spt;
     if (!(barSec > 0) || Math.abs(nextLen - this.loopLenSec) > 1e-6) {
@@ -199,7 +183,8 @@ export class Transport {
       const when = this.playStart + this.loopBase + ev.time;
       if (when >= ahead) break;
       const at = Math.max(when, this.ctx.currentTime);
-      for (const node of scheduleVoice(this.ctx, this.master, ev.timbre, ev.pitch, ev.velocity, at, ev.durSec)) {
+      const dest = this.layers.get(ev.role) ?? this.master;
+      for (const node of scheduleVoice(this.ctx, dest, ev.timbre, ev.pitch, ev.velocity, at, ev.durSec)) {
         this.live.push({ start: at, node });
       }
       this.idx++;

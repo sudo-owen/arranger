@@ -9,15 +9,10 @@
  */
 
 export interface Rng {
-  /** Uniform in [0, 1). */
   next(): number;
-  /** Uniform integer in [0, maxExclusive). */
   int(maxExclusive: number): number;
-  /** Uniform real in [min, max). */
   range(min: number, max: number): number;
-  /** True with probability p (default 0.5). */
   bool(p?: number): boolean;
-  /** Uniformly pick one element. Throws on empty input. */
   pick<T>(xs: readonly T[]): T;
   /**
    * A fresh, independent stream derived from a LABEL, not from the running state.
@@ -32,7 +27,6 @@ export interface Rng {
   fork(label: string): Rng;
 }
 
-/** Expand one 32-bit seed into four well-mixed words (splitmix32) to seed sfc32. */
 function seedWords(seed: number): [number, number, number, number] {
   let a = seed >>> 0;
   const nextWord = (): number => {
@@ -47,7 +41,6 @@ function seedWords(seed: number): [number, number, number, number] {
   return [nextWord(), nextWord(), nextWord(), nextWord()];
 }
 
-/** FNV-1a-style mix of a label into a seed. Deterministic, order-stable. */
 function hashSeed(seed: number, label: string): number {
   let h = (seed ^ 0x811c9dc5) >>> 0;
   for (let i = 0; i < label.length; i++) {

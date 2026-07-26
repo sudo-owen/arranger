@@ -2,7 +2,4 @@
 // pure packages (no DOM/Tone/React/Node), per spec §4.
 export * from './key.js';
 export * from './contour.js';
-export * from './roman.js';
-export * from './cadence.js';
-export * from './nct.js';
 export * from './voicing.js';

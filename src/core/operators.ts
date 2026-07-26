@@ -3,8 +3,8 @@ import { PPQ, midi, tick } from './brand.js';
 import type { Rng } from './rng.js';
 import type { ChordEvent, Instrument, Key, Meter, Motif, Note } from './types.js';
 import { motif } from './motif.js';
-import { normWeightAt } from './meter.js';
-import { minArticulation } from './instruments.js';
+import { beatTicks, normWeightAt } from './meter.js';
+import { inRange, minArticulation } from './instruments.js';
 import {
   fromDiatonicDegree,
   toDiatonicDegree,
@@ -26,6 +26,17 @@ export interface Context {
   meter: Meter;
   weights: readonly number[];
   instrument?: Instrument;
+}
+
+/**
+ * Whether a note carries the line or merely decorates it — a strong beat, a note
+ * held at least a beat, or a phrase edge. Harmonising every passing tone as a chord
+ * tone is what turns a brass section to mud, so the block voicer skips the rest.
+ */
+export function isStructural(n: Note, ctx: Context, phraseBoundary = false): boolean {
+  return normWeightAt(n.start, ctx.meter, ctx.weights) >= 0.5
+    || n.duration >= beatTicks(ctx.meter)
+    || phraseBoundary;
 }
 
 // ─── Operator algebra (spec §6.1) ────────────────────────────────────────────
@@ -66,12 +77,10 @@ export function apply(op: Operator, m: Motif, ctx: Context, rng: Rng): Motif {
 
 // ─── Structural-preserving operators (pure, ctx-free) ────────────────────────
 
-/** Shift every pitch by whole octaves. No clamp (keeps octave(n)∘octave(-n)=id). */
 export function octave(m: Motif, delta: number): Motif {
   return motif(m.notes.map((n) => ({ ...n, pitch: midi(n.pitch + 12 * delta) })), m.length);
 }
 
-/** Rotate the motif in time by `delta`, wrapping within [0, length). Reversible mod length. */
 export function displace(m: Motif, delta: Tick): Motif {
   const L = m.length;
   if (L <= 0) return m;
@@ -98,7 +107,6 @@ export function augment(m: Motif, num: number, den: number): Motif {
 
 // ─── Surface operators (need Context) ─────────────────────────────────────────
 
-/** Drop notes whose normalised metric weight is below `threshold` (0–1). thin(0)=id. */
 export function thin(m: Motif, ctx: Context, threshold: number): Motif {
   return motif(
     m.notes.filter((n) => normWeightAt(n.start, ctx.meter, ctx.weights) >= threshold),
@@ -106,7 +114,6 @@ export function thin(m: Motif, ctx: Context, threshold: number): Motif {
   );
 }
 
-/** Tile the motif `count` times, each copy transposed by `interval` (per `space`). */
 export function sequence(
   m: Motif, ctx: Context, interval: number, count: number, space: PitchSpace,
 ): Motif {
@@ -125,7 +132,6 @@ export function sequence(
   return motif(out, tick(m.length * count));
 }
 
-/** Reflect pitches about an axis. Chromatic is exact; diatonic reflects in degree space. */
 export function invert(
   m: Motif, ctx: Context, axis: Midi | 'first' | 'centroid', space: PitchSpace,
 ): Motif {
@@ -153,7 +159,6 @@ function reflect(pitch: Midi, axis: number, key: Key, space: PitchSpace): Midi {
 
 // ─── Ornament (spec §6.1 — ~80% of the value; build it well) ──────────────────
 
-/** Fallback when the context names no instrument: a 32nd. */
 const MIN_SPLIT = PPQ / 8;
 
 /**
@@ -189,7 +194,12 @@ export function ornament(
       const ornDur = a.duration - half;
       const weak = normWeightAt(ornStart, ctx.meter, ctx.weights) < 1;
       const p = ornamentPitch(rng.pick(kinds), a, b, ctx.key, rng);
-      if (half >= minSplit && ornDur > 0 && weak && p !== null) {
+      // A neighbour a step below the bottom note of a line already sitting on the
+      // instrument's floor lands outside it. Callers fit the skeleton to the voice and
+      // then decorate, so a decoration written out of range is never checked again —
+      // the critic sees it as the melody being out of range, with nothing to point at.
+      if (half >= minSplit && ornDur > 0 && weak && p !== null
+        && (ctx.instrument === undefined || inRange(p, ctx.instrument))) {
         out.push({ ...a, duration: tick(half) });
         out.push({ start: ornStart, duration: tick(ornDur), pitch: p, velocity: Math.round(a.velocity * 0.8) });
         continue;

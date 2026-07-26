@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/core", "src/theory", "src/generate", "src/critic"]
+  "include": ["src/core", "src/theory", "src/generate", "src/critic", "src/testing"]
 }

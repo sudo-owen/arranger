@@ -9,7 +9,6 @@ export function scaleSteps(mode: Mode): readonly number[] {
   return mode === 'major' ? MAJOR_STEPS : MINOR_STEPS;
 }
 
-/** Semitone offsets of each chord factor from the root. */
 const CHORD_INTERVALS: Record<Quality, readonly number[]> = {
   maj: [0, 4, 7],
   min: [0, 3, 7],
@@ -66,12 +65,10 @@ export function fromDiatonicDegree(absDegree: number, key: Key): Midi {
   return midi(key.tonic + oct * 12 + off);
 }
 
-/** Diatonic transposition by `steps` scale degrees. Reversible for on-scale pitches. */
 export function transposeDiatonic(pitch: Midi, key: Key, steps: number): Midi {
   return fromDiatonicDegree(toDiatonicDegree(pitch, key) + steps, key);
 }
 
-/** Nearest chord tone to `pitch`, preserving register (absolute MIDI). */
 export function nearestChordTone(pitch: Midi, chord: Chord): Midi {
   const targets = chordPCs(chord);
   const base = Math.floor(pitch / 12) * 12;

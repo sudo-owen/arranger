@@ -309,7 +309,40 @@ An acoustic lead gets the same skeleton with the unplayable ornaments left out, 
 onsets are a strict subset of the chip version — the same tune, less surface, never a
 different tune. The bed test asserts exactly that.
 
-### Phase 3 — Stage 3 (Mood) — adaptive begins
+### Phase 3 — Stage 3 (Mood) ✅ done
+
+**3a · Authoring.** `generate/mood.ts` holds the 2-D model: `deform(genome, mood)`
+(total over the unit square, and it never touches `melody.seed`), `progressionForMood`
+(sticky — it keeps the current progression while its brightness still fits, or a pad
+drag across a border swaps harmony every frame), and `layerGains`. `generate/mutate.ts`
+adds `neighbours()` (k variants, each one field apart) and `rerollRole()`, which finally
+uses the per-role seed independence `arrange()` has had since the start.
+
+The pad previews on drag and commits on release: routing pointer moves through the store
+would rebuild the panel under the cursor, so the drag re-arranges and swaps at the next
+bar line for audio only. The stage also reports live whether the bed survives all four
+corners.
+
+**3b · Runtime.** `npm run vendor:engine` copies the DOM-free packages into
+`munch/src/app/music/engine` with a recorded checksum; `npm run vendor:check` fails if
+they drift. `BattleMusicService` now renders from `song.json` via the engine instead of
+parsing a MIDI file — which deleted its hand-mirrored timbre table and its hand-rolled
+MIDI parser outright. Mood moves on two time-scales: per-role gain nodes glide in ~80 ms,
+and the re-arrangement swaps at the loop point, the one boundary always beyond the
+lookahead window.
+
+Verified end to end: a song authored in the app, exported as **3.1 KB of song.json**,
+rendered by munch's own vendored engine across 25 mood points — zero invalid, note
+counts rising monotonically with both axes, and the melody at exactly 150 notes at every
+corner, so the hook really is invariant.
+
+One honest note: mood can change the melody's *ornamentation*, because a re-picked
+progression can push the ornamented line below the contour floor and it falls back to
+its bare skeleton. The tune is the same; the surface may lose an ornament.
+
+`MUSIC_DISABLED` is still `true` in munch — flipping it stays a product call.
+
+### Phase 3 — original scope
 
 **3a · Authoring (song-creatr)**
 - `src/generate/mood.ts` as above.
@@ -326,7 +359,62 @@ different tune. The bed test asserts exactly that.
 - Port the engine, ship `song.json`, wire the vertical layer mixer.
 - Prove the loop end-to-end on the 16-bar bed before Phase 4 makes it a full song.
 
-### Phase 4 — Stage 4 (Form → 30/60/90 s)
+### Debt clearance (after Phase 3) ✅ done
+
+Three things flagged during the reviews and left alone at the time.
+
+**The chord strip and the HMM path were inert — including for imported MIDI.**
+`inferHarmony` ran on import, and then `generateBeds` overrode it with a library
+progression, so every chord edit, the temperature slider and re-infer were writing to a
+value nothing downstream read. Rather than delete a spec feature, they now live exactly
+where they apply: a hook's harmony belongs to its bed's progression (chords render
+disabled, with a line saying so), and imported material — which genuinely has no
+progression — is arranged over its own inferred, hand-correctable harmony. Verified in
+the browser: a chord edit on the demo import survives Generate.
+
+**A second hook wiped the first hook's history.** `useSelectedHook` set
+`evolution: [node]`, discarding the tree — so the one comparison a branching tree exists
+for could not be made. Each hook is now its own root and every subtree stays reachable.
+
+**Beds are corner-validated.** A bed that falls apart at an extreme is not a bed worth
+offering; the Mood stage would only report it afterwards. Same rule that already governs
+the palettes. Measured cost: none — still 6 of 6 beds per Generate across 20 runs.
+
+### Phase 4 — Stage 4 (Form → 30/60/90 s) ✅ done
+
+`generate/form.ts` plans sections; `arrange()` finally reads `g.form`, which had been
+declared since before this work and read by exactly one line (the crash cymbal).
+
+**`Section.density` became `Section.mood`.** Density was urgency under another name, on
+one axis where the rest of the system has two — no way to say "quieter but brighter".
+Section moods are absolute positions COMPOSED with the track's current mood, so dragging
+the pad raises or lowers the whole arc instead of flattening it. The `Mood` type moved to
+core, since `Section` carries one.
+
+Two constraints shape every plan: bar counts are whole phrases (four bars), and the total
+is a multiple of the four-chord progression so the last bar leads back to the first.
+`loopSeamProblems` in the critic checks the join three ways — a chord that does not
+return, a crash colliding with the downbeat crash, and material sustaining past the loop.
+
+Two real bugs surfaced:
+
+1. **`contourSimilarity` sampled at a fixed 32 points regardless of length.** Fine at 16
+   bars, but at 64 that is one sample every two bars — below the rate the melody moves,
+   so it measured aliasing and rejected long tracks for "sounding different". Sampling now
+   follows length at eighth-note resolution. This was pre-existing; Phase 4 exposed it by
+   making tracks long enough to trip it.
+2. **A six-section shape cannot fit 30 s at 140 BPM** (16 bars, needs 24). `shapesFor`
+   only offers plans that fit, rather than silently overrunning the requested length.
+
+`SongSpec` carries `formShapeId`, without which the game rendered the right number of
+bars with no arc — a long loop rather than the track that was auditioned.
+
+Verified end to end: a 60 s Arc authored in the app, exported as **2.4 KB**, rendered by
+munch's own vendored engine — 44 bars / 62.9 s, sections `intro 4 · A 12 · A' 8 · B 8 ·
+A" 8 · tag 4`, zero invalid mood points, drum density tracking the arc (8.5 → 12.8 → 16.9
+hits/bar at the climax), and the melody within 2% across all four corners.
+
+### Phase 4 — original scope
 
 - New `src/generate/form.ts`: `planForm(targetSeconds, bpm, meter, rng, style): Form`.
   60 s at 160 BPM = 40 bars, e.g. `intro 4 · A 8 · A′ 8 · B 8 · A″ 8 · tag 4`, each
@@ -339,14 +427,42 @@ different tune. The bed test asserts exactly that.
   critic rejects candidates that thud at the join.
 - Adaptive extends to section scale — mood biases which section comes next.
 
-### Phase 5 — Stage 5 (Variation)
+### Phase 5 — Stage 5 (Variation) ✅ done
 
-Per-recurrence operator chains driven by `melody.radius`: each hook restatement gets a
-chain (octave up, thin, ornament, invert, re-orchestrate to brass). UI is a row of
-recurrence chips — A, A′, A″ — each with a variation dropdown and reroll. Optional
-sub-melody in B, generated as a counter-line promoted to a lead voice. Variation choices
-become mood-aware: the desperate corner favours thinning and register climb, the
-triumphant corner favours brass restatement.
+Per-recurrence operator chains in `generate/variation.ts`. Seven treatments — as-written,
+thinned, ornamented, octave up/down, answered, double-time — each a bounded chain over
+the `core` operators, applied to the SOURCE per section before `arrange`, so all five
+voices answer the variation rather than the statement.
+
+A treatment with a knob bounds itself: `thinned` and `double-time` search their
+thresholds for the boldest move that still reads as the hook. Kinship is measured by
+contour similarity, which is blind to time-scaling and — by also scoring the first
+statement alone — to repetition, so `double-time` and `octave-up` both register as the
+same tune. `variationProblems` is the backstop for anything a treatment cannot bound.
+
+The UI is five whole-track schemes to compare, plus a per-section grid, each card showing
+what share of every section's notes the treatment moved.
+
+Mood-awareness is `variationForMood`: outside a ±0.25 band around neutral fortune, every
+section steps one rung along `thinned → answered → as-written → ornamented`; a section
+already at the bottom strains upward to `octave-up` instead. Authored register and tempo
+statements are left alone. Like `deform` it biases rather than assigns, and it is exactly
+the identity at neutral — so what you author is what you audition, and the fight arcs
+change the tune rather than only the mix. The triumphant half of "brass restatement" was
+already served by `layerGains`, which brings brass forward as fortune rises.
+
+The sub-melody is in `roles/winds.ts`: where the melody leaves a whole window open —
+which is what a thinned section is — the winds carry the hook's own material inverted
+around its centre rather than punctuating the gap. Measured, a thinned section carries
+~60% more wind than an unvaried one.
+
+**Not built, deliberately:** per-recurrence reroll. Only `ornamented` is stochastic, so a
+reroll button would do nothing on six of the seven treatments; a version worth having
+needs per-section state, which is the `Section.variation` restructure below.
+
+`melody.radius` and the whole `skeleton` group were removed from `Genome` — written by
+`bedGenome`, read by nothing. Section plans live in `Form`, which is what `arrange`
+actually reads.
 
 This is the anti-fatigue lever — the hook returns four times and is never identical.
 
@@ -365,6 +481,23 @@ you tune against a sound that isn't what ships. Phases 1–2 produce a static 16
 worth listening to. Phase 3 proves the adaptive loop end-to-end while the musical
 material is still small enough to debug. Phase 4 is the largest new algorithm. Phase 5 is
 taste surface and wants the whole song audible first.
+
+## Known next steps
+
+- **`Section.variation`** — variation is keyed by `SectionLabel` and threaded separately
+  through `arrangeAtMood`, `SongSpec`, `Snapshot`, `AppState` and two caches. `Section`
+  already carries `mood` the same way, materialised by `planForm`. Moving variation there
+  removes the parallel channel, makes keying positional (so a form could repeat a label,
+  and A′ could differ from A″ on the same material), and is what per-recurrence reroll
+  needs. ~2–3h; changes the wire format.
+- **`violations(arr, source, bpm)`** — every production caller now passes `arr.source`.
+  The parameter's only remaining function is to let a caller pass the wrong one, which is
+  what broke the reroll invariant under a variation once already.
+- **Fight arcs run on a wall clock**, polling `transport.playing` on a 100 ms interval.
+  `Transport` already exposes `positionSec`/`loopLenSec` and fires `onTick`; driving from
+  those makes the arc loop-synchronous by construction and survives pause and seek.
+- **`setTreatment` writes a history node per click**, unlike every other audition control
+  — the mood pad previews on drag and commits on release.
 
 ## Deferred
 

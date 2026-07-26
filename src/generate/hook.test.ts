@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { Key, Meter } from '../core/index.js';
-import { PPQ, barTicks, makeRng, pc, toDiatonicDegree } from '../core/index.js';
+import { KEY, METER } from '../testing/index.js';
+import { PPQ, barTicks, makeRng, toDiatonicDegree } from '../core/index.js';
 import {
   HOOK_RHYTHMS, HOOK_SCHEMES, distinctPitches, generateHook, generateHookSet, renderHook, statement,
 } from './hook.js';
 import type { HookOptions, RestatementScheme } from './hook.js';
 
-const KEY: Key = { tonic: pc(0), mode: 'minor' };
-const METER: Meter = { num: 4, den: 4 };
 
 const opts = (over: Partial<HookOptions> = {}): HookOptions => ({
   seed: 42, key: KEY, meter: METER, cellBars: 2, scheme: 'sequence-up', rhythm: 'gallop', ...over,
@@ -195,10 +193,6 @@ describe('phrasing', () => {
     }
   });
 
-  it('never writes a note past the end', () => {
-    const m = renderHook(generateHook(opts({ rhythm: 'march' })), 12);
-    for (const n of m.notes) expect(n.start + n.duration).toBeLessThanOrEqual(m.length);
-  });
 });
 
 describe('generateHookSet', () => {

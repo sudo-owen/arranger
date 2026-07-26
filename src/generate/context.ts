@@ -1,7 +1,6 @@
 import type { ChordEvent, Form, Harmony, Meter, Midi, Motif, Tick } from '../core/index.js';
-import { barTicks, midi, tick } from '../core/index.js';
+import { NEUTRAL_MOOD, barTicks, midi, tick } from '../core/index.js';
 
-/** Everything the role generators read. Harmony is owned (spec §3.3); roles are functions of it. */
 export interface GenContext {
   harmony: Harmony;
   form: Form;
@@ -9,7 +8,6 @@ export interface GenContext {
   source: Motif; // the user's melody — needed for the contour floor and wind/brass complementarity
 }
 
-/** The chord sounding at tick t (events are contiguous; clamps to the last). */
 export function chordAt(h: Harmony, t: Tick): ChordEvent {
   let hit: ChordEvent | undefined;
   for (const e of h.events) {
@@ -22,7 +20,6 @@ export function chordAt(h: Harmony, t: Tick): ChordEvent {
   throw new Error('chordAt: empty harmony');
 }
 
-/** Sounding pitch of a line at tick t (sample-and-hold). */
 export function pitchAt(m: Motif, t: Tick, fallback = 72): number {
   let p: number = m.notes[0]?.pitch ?? fallback;
   for (const n of m.notes) {
@@ -32,18 +29,20 @@ export function pitchAt(m: Motif, t: Tick, fallback = 72): number {
   return p;
 }
 
-/** Place a pitch class in the octave nearest a MIDI centre. */
 export function placePC(centre: number, pcValue: number): Midi {
   return midi(Math.round((centre - pcValue) / 12) * 12 + pcValue);
 }
 
-/** A single-section form spanning the whole harmony — handy default for tests. */
+/** The degenerate form: one section spanning everything, at neutral. */
 export function wholeForm(h: Harmony): Form {
   return {
     template: 'sentence',
-    sections: [{ label: 'A', start: tick(0), length: h.length, density: 0.7, roles: ['melody', 'bass', 'drums', 'winds', 'brass'] }],
+    sections: [{ label: 'A', start: tick(0), length: h.length, mood: NEUTRAL_MOOD }],
   };
 }
+
+export const wholeContext = (harmony: Harmony, meter: Meter, source: Motif): GenContext =>
+  ({ harmony, form: wholeForm(harmony), meter, source });
 
 export const barCount = (h: Harmony, meter: Meter): number =>
   Math.max(1, Math.round(h.length / barTicks(meter)));

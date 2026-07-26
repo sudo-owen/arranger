@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OBOE, TUBA, barTicks, beatTicks, inRange, isChordTone, makeRng, pc } from '../core/index.js';
+import { OBOE, TUBA, barTicks, barsIn, beatTicks, inRange, isChordTone, makeRng, pc } from '../core/index.js';
 import { contourSimilarity } from '../theory/index.js';
 import { chordAt } from './context.js';
 import { generateBass } from './roles/bass.js';
@@ -7,7 +7,7 @@ import { generateMelody } from './roles/melody.js';
 import { generateDrums } from './roles/drums.js';
 import { generateWinds } from './roles/winds.js';
 import { generateBrass } from './roles/brass.js';
-import { fixtureContext, fixtureGenome } from './fixtures.js';
+import { fixtureContext, fixtureGenome } from '../testing/index.js';
 
 const G = fixtureContext();
 const GEN = fixtureGenome();
@@ -38,7 +38,7 @@ describe('bass generator (§7.4)', () => {
 
 describe('melody generator (§7.4, §3.7)', () => {
   it('ornament 0 → every note is a chord tone on its beat (ornament(0)=id)', () => {
-    const mel = generateMelody(G, { seed: 3, ornament: 0, radius: 0 }, makeRng(3));
+    const mel = generateMelody(G, { seed: 3, ornament: 0 }, makeRng(3));
     for (const n of mel.notes) {
       expect(isChordTone(n.pitch, chordAt(G.harmony, n.start).chord)).toBe(true);
     }
@@ -46,7 +46,7 @@ describe('melody generator (§7.4, §3.7)', () => {
 
   it('respects the contour floor across ornament densities', () => {
     for (const d of [0, 0.5, 1]) {
-      const mel = generateMelody(G, { seed: 7, ornament: d, radius: 0.5 }, makeRng(7));
+      const mel = generateMelody(G, { seed: 7, ornament: d }, makeRng(7));
       expect(contourSimilarity(mel, G.source)).toBeGreaterThanOrEqual(0.5);
     }
   });
@@ -84,11 +84,26 @@ describe('winds generator (§7.4 complementary rhythm)', () => {
   const winds = generateWinds(G, melody, GEN.winds, makeRng(GEN.winds.seed));
   const beat = beatTicks(G.meter);
 
-  it('only sounds where the melody is inactive', () => {
+  it('moves where the melody leaves room, and sustains where it does not', () => {
+    // The old contract — "never sounds where the melody has an onset" — silenced this
+    // role outright once hooks arrived: a battle hook has an onset in every beat.
+    const coverage = (from: number, to: number): number => melody.notes
+      .reduce((sum, n) => sum + Math.max(0, Math.min(to, n.start + n.duration) - Math.max(from, n.start)), 0) / (to - from);
     for (const w of winds.notes) {
-      const melodyOnsetHere = melody.notes.some((n) => n.start >= w.start && n.start < w.start + beat);
-      expect(melodyOnsetHere).toBe(false);
+      const busy = coverage(w.start, w.start + beat) >= 0.6;
+      expect(w.duration > beat, `at ${w.start}`).toBe(busy);
     }
+  });
+
+  it('stays monophonic — a wind section is one line, not a stack', () => {
+    for (let i = 1; i < winds.notes.length; i++) {
+      expect(winds.notes[i]!.start, `note ${i}`)
+        .toBeGreaterThanOrEqual(winds.notes[i - 1]!.start + winds.notes[i - 1]!.duration);
+    }
+  });
+
+  it('actually sounds under a hook, which covers every beat', () => {
+    expect(winds.notes.length).toBeGreaterThan(barsIn(G.harmony.length, G.meter) / 2);
   });
 
   it('stays within the oboe range', () => {

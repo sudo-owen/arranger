@@ -1,15 +1,21 @@
 import type { DrumVoice, TimbreName } from '../core/index.js';
-import { MASTER_CEILING, TIMBRES, drumVoice, velocityGain } from '../core/index.js';
+import { TIMBRES, drumVoice, velocityGain } from '../core/index.js';
 
 /**
- * A native-WebAudio renderer for the timbre table in `core/timbre.ts` (spec §9.2).
+ * The WebAudio renderer for the timbre table in `core/timbre.ts` (spec §9.2).
  *
- * This file holds NO tone decisions — every number comes from the shared table, so
- * munch's `BattleMusicService` renders the same arrangement the same way. What you
- * audition here is what ships. Previously the two diverged completely: a sine lead and
- * sawtooth winds here, all square waves there.
+ * SHARED between song-creatr's transport and munch's battle music — this package is
+ * vendored into the game alongside the engine. It held no tone decisions even before
+ * that (every number comes from the table), but the node graph itself used to be
+ * written out twice, and the copies drifted three ways: the noise buffer length, the
+ * master gain, and whether per-role layer gains were applied at all. The claim that
+ * "what you audition is what ships" only holds if one file makes the sound.
+ *
+ * It needs DOM lib for `AudioContext`, so it lives outside the DOM-free engine — but it
+ * touches no `document` and no `window`, and stays headless-testable.
  */
-const freq = (pitch: number): number => 440 * 2 ** ((pitch - 69) / 12);
+export const midiToHz = (pitch: number): number => 440 * 2 ** ((pitch - 69) / 12);
+const freq = midiToHz;
 
 const noiseCache = new WeakMap<AudioContext, AudioBuffer>();
 function noise(ctx: AudioContext): AudioBuffer {
@@ -22,9 +28,6 @@ function noise(ctx: AudioContext): AudioBuffer {
   return buf;
 }
 
-export { MASTER_CEILING };
-
-/** Schedule one note; returns the source nodes so the transport can cancel them on a hot-swap. */
 export function scheduleVoice(
   ctx: AudioContext, dest: AudioNode, timbre: TimbreName | null,
   pitch: number, velocity: number, when: number, durSec: number,
@@ -56,6 +59,15 @@ export function scheduleVoice(
     bp.frequency.value = f * t.filter.mult;
     bp.Q.value = t.filter.q;
     osc.connect(bp); bp.connect(env);
+  } else if (t.filter.kind === 'lowpass-rel') {
+    // Nyquist matters here in a way it does not for the fixed lowpass: the cutoff
+    // tracks the pitch, so at the top of a wind section's range 4×f is past half the
+    // sample rate and an unclamped value makes the filter misbehave rather than open.
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.min(f * t.filter.mult, ctx.sampleRate * 0.45);
+    lp.Q.value = t.filter.q;
+    osc.connect(lp); lp.connect(env);
   } else {
     const { openMult, peakMult, settleMult, openSec } = t.filter;
     const lp = ctx.createBiquadFilter();

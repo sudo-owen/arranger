@@ -9,11 +9,7 @@
   --muted: #b8b5aa;
   --accent: #dcc57a;
   --accent-soft: #33301f;
-  --melody: #d4a452;
-  --bass: #7588c5;
-  --drums: #9a9a91;
-  --winds: #68a698;
-  --brass: #c86f5b;
+  --warn: #c86f5b;
   --display: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
   --serif: "Bodoni Moda", Georgia, serif;
   --mono: "DM Mono", ui-monospace, monospace;
@@ -125,23 +121,47 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .empty-note { padding: 22px; border: 1px dashed var(--border-hi); border-radius: 6px; color: var(--muted); font-size: 15px; text-align: center; }
 
 /* ── pins ───────────────────────────────────────────────────────────── */
-.pin-tray { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Same language as the lineage rows: flat, square, and marked by a left rail rather
+   than outlined as a pill. */
+.pin-tray { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .pin-tray.empty { display: block; color: var(--muted); font-size: 14px; }
-.pin { display: inline-flex; align-items: stretch; border: 1px solid var(--border-hi); border-radius: 999px; background: var(--panel-2); overflow: hidden; }
-.pin.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.pin-label { padding: 6px 5px 6px 13px; border: 0; color: var(--text); background: transparent; font-family: var(--mono); font-size: 15px; }
+.pin { display: inline-flex; align-items: stretch; border: 0; border-left: 2px solid var(--border-hi); border-radius: 0; background: var(--panel-2); overflow: hidden; }
+.pin.active { border-left-color: var(--accent); background: var(--accent-soft); }
+.pin-label { padding: 6px 4px 6px 9px; border: 0; color: var(--text); background: transparent; font-family: var(--mono); font-size: 15px; }
+.pin.active .pin-label { color: var(--accent); }
 .pin-label:hover { color: var(--accent); }
-.pin-drop { padding: 6px 11px 6px 3px; border: 0; color: var(--muted); background: transparent; font-size: 16px; line-height: 1; }
-.pin-drop:hover { color: var(--brass); }
+.pin-drop { padding: 6px 9px 6px 3px; border: 0; color: var(--muted); background: transparent; font-size: 16px; line-height: 1; }
+.pin-drop:hover { color: var(--warn); }
 
 /* ── lineage ────────────────────────────────────────────────────────── */
-.tree { display: grid; gap: 2px; font-family: var(--mono); font-size: 15px; }
-.tree button { display: block; width: 100%; padding: 6px 8px; overflow: hidden; border: 0; border-left: 2px solid transparent; border-radius: 4px; color: var(--muted); background: transparent; font-family: var(--mono); font-size: 15px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.tree button:hover { background: var(--panel-2); }
-.tree button.on { border-left-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.tree .depth-1 { padding-left: 18px; }
-.tree .depth-2 { padding-left: 30px; }
-.tree .depth-3 { padding-left: 42px; }
+/* A tree, drawn as one: rows sit flush so each row's rail segment stacks into a
+   continuous spine, and a tick carries the spine into the label. No per-row pill. */
+.tree { display: grid; gap: 0; font-family: var(--mono); font-size: 15px; }
+.tree button {
+  --rail: 2px;
+  position: relative; display: block; width: 100%; padding: 7px 8px 7px 16px;
+  overflow: hidden; border: 0; border-radius: 0;
+  color: var(--muted); background: transparent;
+  font-family: var(--mono); font-size: 15px; text-align: left;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.tree .depth-1 { --rail: 16px; padding-left: 30px; }
+.tree .depth-2 { --rail: 30px; padding-left: 44px; }
+.tree .depth-3 { --rail: 44px; padding-left: 58px; }
+.tree button::after { content: ""; position: absolute; top: 0; bottom: 0; left: var(--rail); width: 1px; background: var(--border); }
+.tree button::before { content: ""; position: absolute; top: 50%; left: var(--rail); width: 9px; height: 1px; background: var(--border); }
+/* Start below the first row's tick, and stop at the tick of any row that ends its
+   branch — a rail running past the last child is the tell of a fake tree. */
+.tree button:first-child::after { top: 50%; }
+.tree button:last-child::after,
+.tree .depth-1:has(+ .depth-0)::after,
+.tree .depth-2:has(+ .depth-1)::after, .tree .depth-2:has(+ .depth-0)::after,
+.tree .depth-3:has(+ .depth-2)::after, .tree .depth-3:has(+ .depth-1)::after,
+.tree .depth-3:has(+ .depth-0)::after { bottom: 50%; }
+.tree button:hover { color: var(--text); background: var(--panel-2); }
+.tree button.on { color: var(--accent); background: var(--accent-soft); }
+.tree button.on::before { background: var(--accent); }
+.tree-empty { margin: 0; color: var(--muted); font-size: 14px; }
 
 /* ── advanced drawer ────────────────────────────────────────────────── */
 .drawer { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--panel); }
@@ -180,3 +200,21 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .knobs label { grid-template-columns: 100px minmax(0, 1fr) 44px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ── mood pad ───────────────────────────────────────────────────────── */
+.mood-row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 16px; }
+.pad { position: relative; width: 280px; height: 280px; flex: none; border: 1px solid var(--border-hi); border-radius: var(--r); background: var(--roll-bg); cursor: crosshair; touch-action: none; }
+.pad .dot { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--accent); pointer-events: none; }
+.pad-frame { display: grid; grid-template-columns: 280px auto; gap: 4px 10px; align-items: center; }
+.pad-frame .ax { color: var(--muted); font-family: var(--mono); font-size: 14px; }
+.pad-frame .top { grid-column: 1; text-align: center; }
+.pad-frame .bottom { grid-column: 1; text-align: center; }
+.pad-frame .right { grid-row: 2; grid-column: 2; }
+.mood-readout { flex: 1; min-width: 240px; }
+.mood-name { font-family: var(--mono); font-size: 18px; margin-bottom: 4px; }
+.notice.warn { border-left-color: var(--warn); color: var(--text); }
+
+/* ── section plans ──────────────────────────────────────────────────── */
+.formbar { display: flex; height: 44px; margin: 10px 0; border-radius: 4px; overflow: hidden; }
+.formbar div { display: flex; align-items: center; justify-content: center; min-width: 0; border-right: 1px solid var(--panel); color: #17150f; font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.formbar div:last-child { border-right: 0; }

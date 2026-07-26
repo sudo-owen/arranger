@@ -13,7 +13,6 @@ import { barTicks, chordPCs, pc, tick, weightAt, weightsFor } from '../core/inde
 const EMIT_TONE = 0.9;
 const EMIT_NCT = 0.1;
 
-/** The per-key chord vocabulary: diatonic triads + V7 + secondary dominants + a few borrowed. Capped ~15 (§7.2). */
 export function harmonyStates(key: Key): Chord[] {
   const t = key.tonic;
   const at = (semi: number, quality: Quality): Chord => ({ root: pc(t + semi), quality });
@@ -56,7 +55,7 @@ const MOTION_SCORE: Readonly<Record<number, number>> = {
 };
 
 function logTransition(from: Chord, to: Chord, key: Key): number {
-  const motion = (((to.root - from.root) % 12) + 12) % 12; // 5 = down a fifth (the strong one)
+  const motion = pc(to.root - from.root); // 5 = down a fifth (the strong one)
   let s = MOTION_SCORE[motion] ?? 0.2;
   const secondaryDom = from.quality === 'dom7' && !isDiatonicV(from, key);
   if (secondaryDom) s += motion === 5 ? 0.6 : -0.3; // a secondary dominant wants to resolve down a fifth
@@ -143,7 +142,6 @@ function logSumExp(xs: readonly number[]): number {
   return max + Math.log(sum);
 }
 
-/** Sample an index from log-weights, tempered. Higher temperature → flatter → more surprising (§7.2). */
 function sampleLog(logw: readonly number[], temperature: number, rng: Rng): number {
   const temp = Math.max(0.05, temperature);
   const scaled = logw.map((l) => l / temp);
@@ -203,14 +201,12 @@ function harmonyFromPath(path: Chord[], key: Key, meter: Meter, length: number):
   return { key, events, length: tick(length) };
 }
 
-/** MAP harmony to show the user (spec §7.2, Viterbi). */
 export function inferHarmony(source: Motif, key: Key, meter: Meter): Harmony {
   const states = harmonyStates(key);
   const bars = barsOf(source, meter);
   return harmonyFromPath(viterbi(bars, states, key, meter, weightsFor(meter)), key, meter, source.length);
 }
 
-/** A sampled harmony variation at a given temperature (spec §7.2, FFBS). */
 export function sampleHarmony(source: Motif, key: Key, meter: Meter, temperature: number, rng: Rng): Harmony {
   const states = harmonyStates(key);
   const bars = barsOf(source, meter);

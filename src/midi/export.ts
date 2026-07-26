@@ -14,11 +14,8 @@ import { PPQ, TIMBRES, timbreNameFor } from '../core/index.js';
 
 export function toSMF(arr: Arrangement, bpm: number, meter: Meter): Uint8Array {
   const out: number[] = [];
-  const pushStr = (s: string): void => { for (const ch of s) out.push(ch.charCodeAt(0)); };
-  const pushU16 = (v: number): void => { out.push((v >> 8) & 0xff, v & 0xff); };
-  const pushU32 = (v: number): void => { out.push((v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff); };
 
-  pushStr('MThd'); pushU32(6); pushU16(1); pushU16(1 + arr.tracks.length); pushU16(PPQ);
+  pushStr(out, 'MThd'); pushU32(out, 6); pushU16(out, 1); pushU16(out, 1 + arr.tracks.length); pushU16(out, PPQ);
 
   writeChunk(out, metaTrack(bpm, meter));
   for (let i = 0; i < arr.tracks.length; i++) {
@@ -28,15 +25,17 @@ export function toSMF(arr: Arrangement, bpm: number, meter: Meter): Uint8Array {
     writeChunk(out, roleTrack(tr.role, channel, program, tr.motif.notes));
   }
   return Uint8Array.from(out);
-
-  function writeChunk(dst: number[], body: number[]): void {
-    pushStrTo(dst, 'MTrk');
-    dst.push((body.length >>> 24) & 0xff, (body.length >>> 16) & 0xff, (body.length >>> 8) & 0xff, body.length & 0xff);
-    for (const b of body) dst.push(b);
-  }
 }
 
-function pushStrTo(dst: number[], s: string): void { for (const ch of s) dst.push(ch.charCodeAt(0)); }
+function pushStr(dst: number[], s: string): void { for (const ch of s) dst.push(ch.charCodeAt(0)); }
+function pushU16(dst: number[], v: number): void { dst.push((v >> 8) & 0xff, v & 0xff); }
+function pushU32(dst: number[], v: number): void { dst.push((v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff); }
+
+function writeChunk(dst: number[], body: number[]): void {
+  pushStr(dst, 'MTrk');
+  pushU32(dst, body.length);
+  for (const b of body) dst.push(b);
+}
 
 function varLen(v: number): number[] {
   const bytes = [v & 0x7f];
@@ -81,5 +80,5 @@ function roleTrack(role: Role, channel: number, program: number, notes: readonly
 
 function pushName(body: number[], name: string): void {
   body.push(0x00, 0xff, 0x03, name.length);
-  for (const ch of name) body.push(ch.charCodeAt(0));
+  pushStr(body, name);
 }

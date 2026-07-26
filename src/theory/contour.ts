@@ -1,4 +1,5 @@
 import type { Motif } from '../core/index.js';
+import { PPQ } from '../core/index.js';
 
 /**
  * Step-contour similarity (Müllensiefen; spec §7.5). Sample sounding pitch at N
@@ -7,26 +8,24 @@ import type { Motif } from '../core/index.js';
  * must not tank the score. This is the ONE aesthetic criterion the critic hard-rejects
  * on (< 0.5 → different tune wearing the same chords). Target band 0.6–0.8.
  */
+/**
+ * Sample times ascend and notes are sorted, so one cursor walks both. Restarting the
+ * note scan per sample made this quadratic — and since the sample count now follows
+ * length, both factors grew together: at 64 bars it was 453µs, 91% of the entire
+ * critic pass and 29% of `arrange()`.
+ */
 export function samplePitch(m: Motif, n: number): number[] {
   const out = new Array<number>(n).fill(0);
   const L = Math.max(1, m.length);
   const notes = m.notes;
-  const firstPitch: number = notes[0]?.pitch ?? 60;
+  let pitch: number = notes[0]?.pitch ?? 60;
+  let j = 0;
   for (let i = 0; i < n; i++) {
     const t = Math.floor((i * L) / n);
-    out[i] = soundingPitchAt(notes, t, firstPitch);
+    while (j < notes.length && notes[j]!.start <= t) pitch = notes[j++]!.pitch;
+    out[i] = pitch;
   }
   return out;
-}
-
-function soundingPitchAt(notes: Motif['notes'], t: number, fallback: number): number {
-  // Most recent note whose onset is at or before t (sample-and-hold).
-  let p = fallback;
-  for (const nt of notes) {
-    if (nt.start <= t) p = nt.pitch;
-    else break; // notes are sorted by start
-  }
-  return p;
 }
 
 export function zNorm(xs: readonly number[]): number[] {
@@ -42,7 +41,7 @@ export function zNorm(xs: readonly number[]): number[] {
   return xs.map((x) => (x - mean) / sd);
 }
 
-export function pearson(xs: readonly number[], ys: readonly number[]): number {
+export function cosine(xs: readonly number[], ys: readonly number[]): number {
   const n = Math.min(xs.length, ys.length);
   if (n === 0) return 0;
   let num = 0;
@@ -59,11 +58,22 @@ export function pearson(xs: readonly number[], ys: readonly number[]): number {
   return den === 0 ? 0 : num / den;
 }
 
-export function contourSimilarity(a: Motif, b: Motif, n = 32): number {
-  return pearson(zNorm(samplePitch(a, n)), zNorm(samplePitch(b, n)));
+/**
+ * Sample density has to follow LENGTH, not sit at a constant.
+ *
+ * A fixed 32 points is two samples per bar over 16 bars — coarse but workable — and one
+ * sample every two bars over 64, which is below the rate the melody moves. Past that
+ * point the score measures aliasing rather than shape, and long tracks got rejected for
+ * "sounding different" when the curve was simply undersampled. Eighth-note resolution
+ * keeps ornaments invisible (they are sixteenths) and structure visible at any length.
+ */
+const sampleCount = (lengthTicks: number): number => Math.max(32, Math.round(lengthTicks / (PPQ / 2)));
+
+export function contourSimilarity(a: Motif, b: Motif): number {
+  const n = sampleCount(Math.max(a.length, b.length));
+  return cosine(zNorm(samplePitch(a, n)), zNorm(samplePitch(b, n)));
 }
 
-/** The spec's hard floor (§3.7, §7.5). */
 export const CONTOUR_FLOOR = 0.5;
 export function passesContourFloor(candidate: Motif, source: Motif): boolean {
   return contourSimilarity(candidate, source) >= CONTOUR_FLOOR;

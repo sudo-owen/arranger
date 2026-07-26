@@ -15,17 +15,41 @@ export function motif(notes: readonly Note[], length?: Tick): Motif {
   return { notes: sorted, length: length ?? tick(end) };
 }
 
-/** Map each note, then re-establish the sort invariant. */
+/** Notes falling in [start, start+length), rebased to zero. */
+export function sliceAt(m: Motif, start: number, length: number): Motif {
+  const notes = m.notes
+    .filter((n) => n.start >= start && n.start < start + length)
+    .map((n) => ({ ...n, start: tick(n.start - start), duration: tick(Math.min(n.duration, length - (n.start - start))) }));
+  return motif(notes, tick(length));
+}
+
+/**
+ * Repeat `m` until it covers `target`, dropping anything that would cross the end.
+ * Both callers need it for the same reason: material whose natural length is shorter
+ * than the span it has to fill — a hook cell against a phrase, a halved section
+ * against the section it belongs to.
+ */
+export function tileTo(m: Motif, target: Tick): Motif {
+  if (m.length <= 0 || !m.notes.length) return motif([], target);
+  const notes: Note[] = [];
+  for (let offset = 0; offset < target; offset += m.length) {
+    for (const n of m.notes) {
+      const start = n.start + offset;
+      if (start >= target) break;
+      notes.push({ ...n, start: tick(start), duration: tick(Math.min(n.duration, target - start)) });
+    }
+  }
+  return motif(notes, target);
+}
+
 export function mapNotes(m: Motif, fn: (n: Note) => Note): Motif {
   return motif(m.notes.map(fn), m.length);
 }
 
-/** Replace the note list (re-sorted), keeping length. */
 export function withNotes(m: Motif, notes: readonly Note[]): Motif {
   return motif(notes, m.length);
 }
 
-/** Dev-only invariant check. O(n); call in tests or behind a debug flag. */
 export function assertMotif(m: Motif): void {
   for (let i = 1; i < m.notes.length; i++) {
     const prev = m.notes[i - 1];

@@ -55,6 +55,7 @@
             <button id="extend" class="ghost">Extend source ×2</button>
             <button id="promote" class="ghost">Use melody as source</button>
             <button id="export" class="ghost">Export MIDI</button>
+            <button id="exportSpec" class="ghost">Export song.json</button>
           </div>
 
           <div id="chordStrip" class="chordstrip">Chords appear here once a hook is committed.</div>
@@ -65,7 +66,7 @@
             <span id="tempVal" class="mono">0.60</span>
             <button id="reinfer" class="ghost small">Re-infer chords</button>
           </div>
-          <p class="hint">The chords are inferred, then <em>yours</em>. Click a chord to change it (shift-click steps back). A named battle-progression library replaces this inference in the next phase.</p>
+          <p class="hint" id="harmonyNote"></p>
         </div>
       </details>
 

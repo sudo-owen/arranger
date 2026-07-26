@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { BRASS_SECTION, OBOE, PULSE_LEAD, PPQ, WIND_SECTION, midi, motif, specFor, tick } from '../core/index.js';
 import type { Instrument, Motif, Note } from '../core/index.js';
 import { arrange } from '../generate/index.js';
-import { fixtureContext, fixtureGenome } from '../generate/fixtures.js';
-import { cosineSim, featureVector, isValid, selectDiverse, violations } from './critic.js';
+import { fixtureContext, fixtureGenome } from '../testing/index.js';
+import { featureVector, isValid, selectDiverse, violations } from './critic.js';
+import { cosine } from '../theory/index.js';
 
 const G = fixtureContext();
 const arr = arrange(G, fixtureGenome());
@@ -25,8 +26,8 @@ function shredLine(): Motif {
 
 describe('critic hard constraints (§7.5)', () => {
   it('a generated arrangement passes the hard constraints', () => {
-    expect(violations(arr, G.source, 96, G.meter)).toEqual([]);
-    expect(isValid(arr, G.source, 96, G.meter)).toBe(true);
+    expect(violations(arr, G.source, 96)).toEqual([]);
+    expect(isValid(arr, G.source, 96)).toBe(true);
   });
 
   it('flags an out-of-range instrument', () => {
@@ -34,7 +35,7 @@ describe('critic hard constraints (§7.5)', () => {
     const broken = { ...arr, tracks: arr.tracks.map((t) => t.role === 'bass'
       ? { ...t, motif: { ...t.motif, notes: t.motif.notes.map((n) => ({ ...n, pitch: (n.pitch - 24) as typeof n.pitch })) } }
       : t) };
-    expect(violations(broken, G.source, 96, G.meter).length).toBeGreaterThan(0);
+    expect(violations(broken, G.source, 96).length).toBeGreaterThan(0);
   });
 });
 
@@ -44,13 +45,13 @@ describe('voice classes', () => {
     ({ ...arr, tracks: arr.tracks.map((t) => (t.role === 'winds' ? { ...t, instrument, motif: shred } : t)) });
 
   it('holds an acoustic voice to its articulation and breath limits', () => {
-    const found = violations(withWinds(OBOE), G.source, 170, G.meter);
+    const found = violations(withWinds(OBOE), G.source, 170);
     expect(found.some((v) => v.includes('articulation'))).toBe(true);
     expect(found.some((v) => v.includes('phrase exceeds'))).toBe(true);
   });
 
   it('exempts a chip voice from both — a pulse channel has no tongue and no lungs', () => {
-    const found = violations(withWinds(PULSE_LEAD), G.source, 170, G.meter);
+    const found = violations(withWinds(PULSE_LEAD), G.source, 170);
     expect(found.some((v) => v.includes('articulation'))).toBe(false);
     expect(found.some((v) => v.includes('phrase exceeds'))).toBe(false);
   });
@@ -58,12 +59,12 @@ describe('voice classes', () => {
   it('still enforces range on chip voices', () => {
     const tooLow = motif(shred.notes.map((n) => ({ ...n, pitch: midi(n.pitch - 36) })), shred.length);
     const broken = { ...arr, tracks: arr.tracks.map((t) => (t.role === 'winds' ? { ...t, instrument: PULSE_LEAD, motif: tooLow } : t)) };
-    expect(violations(broken, G.source, 170, G.meter).some((v) => v.includes('out of'))).toBe(true);
+    expect(violations(broken, G.source, 170).some((v) => v.includes('out of'))).toBe(true);
   });
 
   it('exempts a section from the breath limit but not from articulation', () => {
     // Players stagger their breathing between desks; they do not share a tongue.
-    const found = violations(withWinds(WIND_SECTION), G.source, 170, G.meter);
+    const found = violations(withWinds(WIND_SECTION), G.source, 170);
     expect(found.some((v) => v.includes('phrase exceeds'))).toBe(false);
     expect(found.some((v) => v.includes('articulation'))).toBe(true);
   });
@@ -87,7 +88,7 @@ describe('voice classes', () => {
     }
     const blocks = motif(stacked, tick(32 * PPQ));
     const broken = { ...arr, tracks: arr.tracks.map((t) => (t.role === 'winds' ? { ...t, instrument: OBOE, motif: blocks } : t)) };
-    expect(violations(broken, G.source, 170, G.meter).some((v) => v.includes('phrase exceeds'))).toBe(false);
+    expect(violations(broken, G.source, 170).some((v) => v.includes('phrase exceeds'))).toBe(false);
   });
 });
 
@@ -95,7 +96,7 @@ describe('diversity selection (§7.6)', () => {
   it('feature vectors are fixed-length; cosine self-similarity is 1', () => {
     const v = featureVector(arr);
     expect(v.length).toBe(18);
-    expect(cosineSim(v, v)).toBeCloseTo(1, 6);
+    expect(cosine(v, v)).toBeCloseTo(1, 6);
   });
 
   it('MMR picks k distinct items, best-scored first', () => {

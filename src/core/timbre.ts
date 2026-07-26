@@ -18,12 +18,20 @@ import type { Instrument } from './types.js';
 export type Waveform = 'sine' | 'square' | 'sawtooth' | 'triangle';
 
 export type FilterSpec =
-  /** Unfiltered — the raw oscillator. What makes chip voices read as chip. */
   | { kind: 'none' }
-  /** Fixed cutoff in Hz. */
   | { kind: 'lowpass'; hz: number }
-  /** Cutoff tracks the note: `mult` × fundamental. Keeps timbre even across the range. */
   | { kind: 'bandpass-rel'; mult: number; q: number }
+  /**
+   * A formant as an EMPHASIS rather than a gate: resonant peak at `mult × f`, everything
+   * below it passed. Pitch-relative, so the colour tracks the note instead of shifting
+   * across the range the way a fixed `lowpass` does.
+   *
+   * This exists because `bandpass-rel` costs a voice most of its level. A bandpass
+   * centred at 2f discards the fundamental — measured against the pulse lead, the winds
+   * rendered 14.1 dB down, of which 7.8 dB was the filter alone, and a wind section
+   * 14 dB under the tune is not a mix decision, it is an inaudible voice.
+   */
+  | { kind: 'lowpass-rel'; mult: number; q: number }
   /**
    * The brass gesture: cutoff snaps open on the attack, then settles. This is what
    * reads as "blown" rather than "played" — a fixed filter sounds like an organ.
@@ -35,14 +43,10 @@ export interface VoiceTimbre {
   filter: FilterSpec;
   attackSec: number;
   releaseSec: number;
-  /** Gain at nominal velocity (100), before master. */
   peak: number;
-  /** Sustain level as a fraction of peak. 1 = flat, which is the chip behaviour. */
   sustain: number;
-  /** Vibrato, if any: rate in Hz and depth as a frequency deviation in Hz. */
   vibratoHz?: number;
   vibratoDepthHz?: number;
-  /** General MIDI program written on export and used to recover this timbre on import. */
   gmProgram: number;
 }
 
@@ -66,8 +70,11 @@ export const TIMBRES: Readonly<Record<TimbreName, VoiceTimbre>> = {
     wave: 'triangle', filter: { kind: 'lowpass', hz: 900 },
     attackSec: 0.004, releaseSec: 0.04, peak: 0.17, sustain: 1, gmProgram: 38,
   },
+  // Reed formant just above the 4th partial. Sits at −5.0 dB against the pulse lead,
+  // alongside brass at −4.7 — close enough that a winds-heavy palette reads as winds
+  // rather than as a gap where the winds should be.
   winds: {
-    wave: 'sawtooth', filter: { kind: 'bandpass-rel', mult: 2, q: 6 },
+    wave: 'sawtooth', filter: { kind: 'lowpass-rel', mult: 4, q: 2 },
     attackSec: 0.05, releaseSec: 0.17, peak: 0.17, sustain: 0.8,
     vibratoHz: 5, vibratoDepthHz: 3, gmProgram: 68,
   },
@@ -78,7 +85,6 @@ export const TIMBRES: Readonly<Record<TimbreName, VoiceTimbre>> = {
   },
 };
 
-/** Which timbre an instrument renders through. Falls back by voice class. */
 export function timbreNameFor(inst: Instrument): TimbreName {
   switch (inst.name) {
     case 'lead': case 'pulse lead': return 'pulse-lead';
@@ -90,7 +96,6 @@ export function timbreNameFor(inst: Instrument): TimbreName {
   }
 }
 
-/** Recover a timbre from a General MIDI program number (the import direction). */
 export function timbreForProgram(program: number): TimbreName | null {
   for (const name of Object.keys(TIMBRES) as TimbreName[]) {
     if (TIMBRES[name].gmProgram === program) return name;

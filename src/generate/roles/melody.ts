@@ -1,5 +1,5 @@
 import type { Context, Genome, Instrument, Motif, Note, Rng } from '../../core/index.js';
-import { LEAD, beatTicks, nearestChordTone, motif, ornament, tick, weightsFor } from '../../core/index.js';
+import { LEAD, beatTicks, fitToRange, midi, nearestChordTone, motif, ornament, tick, weightsFor } from '../../core/index.js';
 import { contourSimilarity, CONTOUR_FLOOR } from '../../theory/index.js';
 import { chordAt, type GenContext } from '../context.js';
 
@@ -12,9 +12,31 @@ import { chordAt, type GenContext } from '../context.js';
  * then adds surface, and we re-check: if it ever drops similarity below 0.5, we fall
  * back to the bare skeleton.
  *
- * `radius` (chaining more operators for wider variation) is a deliberate TODO — the
- * taste-critical surface the spec says you rewrite forty times.
+ * Chaining more operators for wider variation is what `generate/variation.ts` does, a
+ * whole recurrence at a time rather than a note at a time.
  */
+/**
+ * Shift the whole line by octaves until it sits inside the voice, rather than folding
+ * notes individually — a constant offset leaves the contour bit-identical, where
+ * per-note folding would invent leaps and fail the very floor it is protecting.
+ *
+ * Melody was the one role that never did this. A descending `answer` over a one-bar
+ * cell walks below the lead's floor, and since the whole candidate set shares a melody
+ * seed, that sank every bed at once: about one Generate in forty returned nothing.
+ */
+function fitLineToRange(notes: readonly Note[], inst: Instrument): Note[] {
+  if (!notes.length) return [...notes];
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const n of notes) { lo = Math.min(lo, n.pitch); hi = Math.max(hi, n.pitch); }
+  let shift = 0;
+  while (lo + shift < inst.low && hi + shift + 12 <= inst.high) shift += 12;
+  while (hi + shift > inst.high && lo + shift - 12 >= inst.low) shift -= 12;
+  const out = notes.map((n) => ({ ...n, pitch: midi(n.pitch + shift) }));
+  // A line wider than the instrument cannot be shifted into it; clamp the stragglers.
+  return out.map((n) => ({ ...n, pitch: fitToRange(n.pitch, inst) }));
+}
+
 export function generateMelody(
   g: GenContext, params: Genome['melody'], rng: Rng, inst: Instrument = LEAD,
 ): Motif {
@@ -40,7 +62,7 @@ export function generateMelody(
     skeleton.push({ start: tick(t), duration: tick(Math.min(rawDur, g.harmony.length - t)), pitch, velocity: 92 });
   }
 
-  const skel = motif(skeleton, g.harmony.length);
+  const skel = motif(fitLineToRange(skeleton, inst), g.harmony.length);
   // Naming the instrument is what stops `ornament` writing figures this voice cannot
   // play — `Context.instrument` existed for exactly this and had never been passed.
   const ctx: Context = { key: g.harmony.key, harmony: g.harmony.events, meter: g.meter, weights: weightsFor(g.meter), instrument: inst };

@@ -28,7 +28,6 @@ export function drop2(voicing: readonly Midi[]): Midi[] {
   return dropVoice(voicing, 2);
 }
 
-/** Drop-3: same idea, third voice from the top. */
 export function drop3(voicing: readonly Midi[]): Midi[] {
   return dropVoice(voicing, 3);
 }

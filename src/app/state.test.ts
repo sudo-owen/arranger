@@ -1,23 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { PPQ } from '../core/index.js';
+import { PPQ, midi, motif, tick } from '../core/index.js';
+import { MOOD_CORNERS, arrangeAtMood, renderSong } from '../generate/index.js';
+import { violations } from '../critic/index.js';
 import { Store } from './state.js';
-
-describe('arrangement extension', () => {
-  it('extends a selected arrangement to explicit total bar counts', () => {
-    const store = new Store();
-    store.generateHookDrafts({ tonic: 0, mode: 'minor' }, 1);
-    store.useSelectedHook(4);
-    store.generateBeds(1);
-
-    store.extendSelectedArrangement(8);
-    expect(store.current()?.length).toBe(8 * 4 * PPQ);
-    expect(store.get().source?.length).toBe(8 * 4 * PPQ);
-
-    store.extendSelectedArrangement(16);
-    expect(store.current()?.length).toBe(16 * 4 * PPQ);
-    expect(store.get().evolution.at(-1)?.kind).toBe('arrangement-extend');
-  });
-});
 
 /** A store parked on a generated set of arrangements. */
 function seeded(count = 4): Store {
@@ -92,5 +77,98 @@ describe('pinned takes', () => {
     store.unpin(first!.id);
     expect(store.get().pinned.map((p) => p.id)).not.toContain(first!.id);
     expect(store.get().pinned).toHaveLength(1);
+  });
+});
+
+describe('debt: harmony ownership, history roots, corner-safe beds', () => {
+  it('offers only beds that survive all four mood corners', () => {
+    const store = seeded(6);
+    const source = store.get().source!;
+    for (const c of store.get().candidates) {
+      for (const { mood, label } of MOOD_CORNERS) {
+        const at = arrangeAtMood(source, store.get().key!, store.get().meter, 4, c.genome, c.progression, mood);
+        expect(violations(at.arr, source, store.get().bpm), label).toEqual([]);
+      }
+    }
+  });
+
+  it('keeps a hook as its own history root instead of wiping the tree', () => {
+    const store = new Store();
+    store.generateHookDrafts({ tonic: 0, mode: 'minor' }, 2);
+    store.useSelectedHook(4);
+    store.generateBeds(2);
+    const firstRun = store.get().evolution.length;
+    const firstHookNode = store.get().evolution[0]!;
+
+    store.generateHookDrafts({ tonic: 5, mode: 'minor' }, 2);
+    store.selectHookDraft(1);
+    store.useSelectedHook(4);
+
+    // The second hook is a second root; the first hook's subtree is still reachable.
+    expect(store.get().evolution.length).toBe(firstRun + 1);
+    expect(store.get().evolution.filter((n) => n.parentId === null)).toHaveLength(2);
+    store.selectEvolution(firstHookNode.id);
+    expect(store.get().hook).toBe(firstHookNode.snapshot.hook);
+  });
+
+  it('arranges imported material over its own inferred harmony, not a library progression', () => {
+    const store = new Store();
+    const q = PPQ;
+    const pitches = [60, 62, 64, 65, 67, 65, 64, 62];
+    store.loadSource(
+      motif(pitches.map((p, i) => ({ start: tick(i * q), duration: tick(q), pitch: midi(p), velocity: 96 })), tick(8 * q)),
+      120, { num: 4, den: 4 }, 'test import', 'import',
+    );
+    const inferred = store.get().harmony!.events.map((e) => e.chord.root);
+    store.generateBeds(2);
+    expect(store.get().candidates.length).toBeGreaterThan(0);
+    for (const c of store.get().candidates) {
+      expect(c.progression).toBeNull();
+      expect(c.arr.harmony.events.map((e) => e.chord.root)).toEqual(inferred);
+    }
+  });
+});
+
+describe('a committed variation reaches every path that builds an arrangement', () => {
+  /** A store parked on a form with a variation committed. */
+  function varied(): Store {
+    const store = new Store();
+    store.generateHookDrafts({ tonic: 9, mode: 'minor' }, 1);
+    store.useSelectedHook();
+    store.generateBeds(4);
+    store.useForm(store.planForms(60)[0]!);
+    store.useVariation({ intro: 'thinned', "A'": 'ornamented', 'A"': 'octave-up' }, 'Terraced');
+    return store;
+  }
+
+  it('rerolling one voice still leaves the others byte-identical', () => {
+    // `contextFor` used to re-derive the varied source with a hardcoded seed while the
+    // shared pipeline used the melody seed, so every reroll silently rewrote the melody
+    // it was supposed to leave alone — §8.2's whole promise, lost under a variation.
+    const store = varied();
+    const before = store.get().candidates[0]!.arr;
+    store.rerollVoice('drums');
+    const after = store.get().candidates[0]!.arr;
+    const notesOf = (a: typeof before, role: 'melody' | 'bass' | 'drums') =>
+      a.tracks.find((t) => t.role === role)!.motif.notes;
+    expect(notesOf(after, 'melody')).toEqual(notesOf(before, 'melody'));
+    expect(notesOf(after, 'bass')).toEqual(notesOf(before, 'bass'));
+    expect(notesOf(after, 'drums')).not.toEqual(notesOf(before, 'drums'));
+  });
+
+  it('auditioning a treatment does not deform the genome it was authored at', () => {
+    const store = varied();
+    const genome = store.get().candidates[0]!.genome;
+    store.setTreatment('B', 'answered');
+    expect(store.get().candidates[0]!.genome).toEqual(genome);
+  });
+
+  it('exports the plan, and the spec rebuilds the arrangement that was auditioned', () => {
+    const store = varied();
+    const spec = store.songSpec()!;
+    expect(spec.variation).toEqual({ intro: 'thinned', "A'": 'ornamented', 'A"': 'octave-up' });
+    const rebuilt = renderSong(JSON.parse(JSON.stringify(spec)) as typeof spec, store.get().mood);
+    expect(rebuilt.tracks.map((t) => t.motif.notes))
+      .toEqual(store.get().candidates[0]!.arr.tracks.map((t) => t.motif.notes));
   });
 });

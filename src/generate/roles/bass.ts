@@ -1,5 +1,5 @@
 import type { Genome, Instrument, Motif, Note, Rng } from '../../core/index.js';
-import { TRI_BASS, beatTicks, barTicks, chordPCs, fitToRange, motif, tick } from '../../core/index.js';
+import { TRI_BASS, beatInBar, beatTicks, chordPCs, fitToRange, motif, pc, tick } from '../../core/index.js';
 import { chordAt, placePC, type GenContext } from '../context.js';
 
 /**
@@ -12,13 +12,12 @@ export function generateBass(
   g: GenContext, params: Genome['bass'], rng: Rng, inst: Instrument = TRI_BASS,
 ): Motif {
   const beat = beatTicks(g.meter);
-  const bar = barTicks(g.meter);
   const centre = 40 + Math.round(params.register * 12); // ~E2, biased by register
   const notes: Note[] = [];
 
   for (let t = 0; t + beat <= g.harmony.length; t += beat) {
     const chord = chordAt(g.harmony, tick(t)).chord;
-    const bib = Math.floor((((t % bar) + bar) % bar) / beat);
+    const bib = beatInBar(t, g.meter);
     const nextChangesHere = chordAt(g.harmony, tick(t + beat)).chord.root !== chord.root;
 
     const pcs = chordPCs(chord);
@@ -29,7 +28,7 @@ export function generateBass(
     let pcValue: number | null;
     if (nextChangesHere && params.walkiness > 0.3) {
       const nextRoot = chordAt(g.harmony, tick(t + beat)).chord.root;
-      pcValue = ((nextRoot - 1) % 12 + 12) % 12; // chromatic approach from below
+      pcValue = pc(nextRoot - 1); // chromatic approach from below
     } else if (bib === 0) {
       pcValue = root;
     } else if (bib === 2) {

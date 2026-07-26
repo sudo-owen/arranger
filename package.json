@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Generative arrangement engine (spec v1.0) — pure engine + native WebAudio app",
+  "description": "Generative arrangement engine (spec v1.0) \u2014 pure engine + native WebAudio app",
   "scripts": {
     "dev": "vite",
     "build": "npm run typecheck && vite build",
@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.app.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench": "vitest bench --run"
+    "bench": "vitest bench --run",
+    "vendor:engine": "node scripts/vendor-engine.mjs",
+    "vendor:check": "node scripts/vendor-engine.mjs --check"
   },
   "devDependencies": {
     "fast-check": "^3.23.2",

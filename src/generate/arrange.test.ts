@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { arrange } from './arrange.js';
-import { fixtureContext, fixtureGenome } from './fixtures.js';
+import { fixtureContext, fixtureGenome } from '../testing/index.js';
 
 const G = fixtureContext();
 

@@ -1,7 +1,6 @@
 import type { Arrangement, Meter, Motif, Role } from '../core/index.js';
 import { barTicks } from '../core/index.js';
 
-/** The role spectrum (spec §10 signature): five voices, five hues, used everywhere structure appears. */
 export const ROLE_COLORS: Readonly<Record<Role, string>> = {
   melody: '#d4a452',
   bass: '#7588c5',

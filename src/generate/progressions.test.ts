@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { Key } from '../core/index.js';
-import { barTicks, pc } from '../core/index.js';
+import { KEY, METER } from '../testing/index.js';
+import { barTicks } from '../core/index.js';
 import {
   PROGRESSIONS, chordOf, defaultProgression, harmonyFromProgression, progressionById,
   progressionsFor, spreadByBrightness,
 } from './progressions.js';
 
-const METER = { num: 4, den: 4 };
-const A_MINOR: Key = { tonic: pc(9), mode: 'minor' };
+const A_MINOR = KEY;
 
 describe('the progression library', () => {
   it('has unique ids', () => {

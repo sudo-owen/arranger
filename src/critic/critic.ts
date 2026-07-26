@@ -1,6 +1,6 @@
 import type { Arrangement, Meter, Motif, Note } from '../core/index.js';
-import { PPQ, inRange, specFor } from '../core/index.js';
-import { contourSimilarity, CONTOUR_FLOOR } from '../theory/index.js';
+import { CRASH, PPQ, barTicks, inRange, pc, secPerTick, specFor } from '../core/index.js';
+import { contourSimilarity, cosine, CONTOUR_FLOOR } from '../theory/index.js';
 
 /**
  * The critic checks HARD constraints only (spec §7.5). Scoring musicality is
@@ -17,9 +17,6 @@ import { contourSimilarity, CONTOUR_FLOOR } from '../theory/index.js';
  * test, which happened to be right for one palette and silently wrong for any other.
  */
 
-const secPerTick = (bpm: number): number => 60 / bpm / PPQ;
-
-/** No two notes sound at once — the precondition `runSeconds` and the tongue model assume. */
 function isMonophonic(m: Motif): boolean {
   for (let i = 1; i < m.notes.length; i++) {
     const prev = m.notes[i - 1]!;
@@ -28,7 +25,7 @@ function isMonophonic(m: Motif): boolean {
   return true;
 }
 
-export function violations(arr: Arrangement, source: Motif, bpm: number, _meter: Meter): string[] {
+export function violations(arr: Arrangement, source: Motif, bpm: number): string[] {
   const out: string[] = [];
   const spt = secPerTick(bpm);
 
@@ -42,19 +39,18 @@ export function violations(arr: Arrangement, source: Motif, bpm: number, _meter:
 
     if (inst.class !== 'acoustic') continue; // chip voices: range is the only physical limit
     const spec = specFor(inst);
-    if (spec && isMonophonic(track.motif)) {
-      // articulation rate: consecutive onsets closer than the instrument's ceiling
-      const notes = track.motif.notes;
-      const minGap = 1 / spec.notesPerSec;
-      for (let i = 1; i < notes.length; i++) {
-        const gap = (notes[i]!.start - notes[i - 1]!.start) * spt;
-        if (gap > 0 && gap < minGap) { out.push(`${track.role}: articulation faster than ${inst.name} can play at ${bpm} BPM`); break; }
-      }
-      // phrase length: a continuous run without a rest longer than the breath limit.
-      // Sections are exempt — players stagger their breaths, so unison lines can run on.
-      if (!spec.section && runSeconds(notes, spt) > spec.maxPhraseSec) {
-        out.push(`${track.role}: phrase exceeds ${spec.maxPhraseSec}s without a rest`);
-      }
+    if (!spec || !isMonophonic(track.motif)) continue;
+
+    const notes = track.motif.notes;
+    const minGap = 1 / spec.notesPerSec;
+    for (let i = 1; i < notes.length; i++) {
+      const gap = (notes[i]!.start - notes[i - 1]!.start) * spt;
+      if (gap > 0 && gap < minGap) { out.push(`${track.role}: articulation faster than ${inst.name} can play at ${bpm} BPM`); break; }
+    }
+    // Sections carry `maxPhraseSec: Infinity` — staggered breathing is encoded in the
+    // limit itself, so there is no separate `section` test to fall out of sync with it.
+    if (runSeconds(notes, spt) > spec.maxPhraseSec) {
+      out.push(`${track.role}: phrase exceeds ${spec.maxPhraseSec}s without a rest`);
     }
   }
 
@@ -66,8 +62,46 @@ export function violations(arr: Arrangement, source: Motif, bpm: number, _meter:
   return out;
 }
 
-export const isValid = (arr: Arrangement, source: Motif, bpm: number, meter: Meter): boolean =>
-  violations(arr, source, bpm, meter).length === 0;
+export const isValid = (arr: Arrangement, source: Motif, bpm: number): boolean =>
+  violations(arr, source, bpm).length === 0;
+
+/**
+ * The track loops forever in game, so bar 1 follows the last bar more often than any
+ * other pair in the piece — and it is the one join nothing else checks. Two ways it
+ * audibly thuds: a chord that does not lead anywhere, and a crash landing on the wrap
+ * where the downbeat crash already is.
+ */
+export function loopSeamProblems(arr: Arrangement, meter: Meter): string[] {
+  const out: string[] = [];
+  const events = arr.harmony.events;
+  const first = events[0]?.chord;
+  const last = events.at(-1)?.chord;
+  if (first && last) {
+    const motion = pc(first.root - last.root);
+    // Authentic (V→I, 5), plagal (IV→I, 7), step approaches (2, 10), or staying put.
+    // Omitting the plagal return rejected `heroic-major` — which is the default major
+    // progression — and disabled every plan on the Form stage with no way forward.
+    if (![0, 2, 5, 7, 10].includes(motion)) {
+      out.push(`loop seam: last chord does not lead back to the first (${motion} semitones)`);
+    }
+  }
+
+  const drums = arr.tracks.find((t) => t.role === 'drums');
+  if (drums) {
+    const lastBar = arr.length - barTicks(meter);
+    if (drums.motif.notes.some((n) => n.pitch === CRASH && n.start >= lastBar)) {
+      out.push('loop seam: a crash in the final bar collides with the downbeat crash');
+    }
+  }
+
+  for (const track of arr.tracks) {
+    if (track.motif.notes.some((n) => n.start + n.duration > arr.length)) {
+      out.push(`loop seam: ${track.role} sustains past the loop point`);
+      break;
+    }
+  }
+  return out;
+}
 
 function runSeconds(notes: readonly Note[], spt: number): number {
   let longest = 0;
@@ -83,7 +117,6 @@ function runSeconds(notes: readonly Note[], spt: number): number {
 
 // ─── diversity selection (spec §7.6) ─────────────────────────────────────────
 
-/** A crude but effective distance basis: PC histogram + per-track onset density + mean melodic interval. */
 export function featureVector(arr: Arrangement): number[] {
   const hist = new Array<number>(12).fill(0);
   let total = 0;
@@ -103,19 +136,6 @@ export function featureVector(arr: Arrangement): number[] {
   const meanInterval = mel.length > 1 ? intervalSum / (mel.length - 1) / 12 : 0;
 
   return [...pcHist, ...density.map((d) => d / 8), meanInterval];
-}
-
-export function cosineSim(a: readonly number[], b: readonly number[]): number {
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < Math.min(a.length, b.length); i++) {
-    dot += (a[i] ?? 0) * (b[i] ?? 0);
-    na += (a[i] ?? 0) ** 2;
-    nb += (b[i] ?? 0) ** 2;
-  }
-  const d = Math.sqrt(na * nb);
-  return d === 0 ? 0 : dot / d;
 }
 
 export interface Scored {
@@ -140,7 +160,7 @@ export function selectDiverse(items: readonly Scored[], k: number, lambda: numbe
     let bestVal = -Infinity;
     for (const i of remaining) {
       const item = items[i]!;
-      const maxSim = Math.max(...picked.map((p) => cosineSim(item.features, items[p]!.features)));
+      const maxSim = Math.max(...picked.map((p) => cosine(item.features, items[p]!.features)));
       const val = item.score - lambda * maxSim;
       if (val > bestVal) { bestVal = val; choice = i; }
     }

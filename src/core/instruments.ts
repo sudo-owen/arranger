@@ -1,6 +1,6 @@
 import type { Midi } from './brand.js';
 import { PPQ, midi } from './brand.js';
-import type { Instrument, VoiceClass } from './types.js';
+import type { Instrument } from './types.js';
 
 /**
  * GM orchestral ranges and articulation ceilings (spec §8.5). Tempo never enters
@@ -14,9 +14,7 @@ import type { Instrument, VoiceClass } from './types.js';
  * stays uniform and there is exactly one place to add a voice.
  */
 export interface InstrumentSpec extends Instrument {
-  /** Max sustainable articulations/second (single-tongue for brass). */
   notesPerSec: number;
-  /** Max unbroken phrase seconds before a breath is required (wind/brass). */
   maxPhraseSec: number;
   /**
    * A SECTION rather than one player. Sections stagger their breathing between desks,
@@ -38,7 +36,6 @@ const spec = (
 const chip = (name: string, low: number, high: number): InstrumentSpec =>
   ({ name, low: midi(low), high: midi(high), class: 'chip', notesPerSec: Infinity, maxPhraseSec: Infinity, section: false });
 
-/** A desk of players in unison: breathing is staggered, tonguing is not. */
 const sectionOf = (name: string, low: number, high: number, notesPerSec: number): InstrumentSpec =>
   ({ name, low: midi(low), high: midi(high), class: 'acoustic', notesPerSec, maxPhraseSec: Infinity, section: true });
 
@@ -58,7 +55,6 @@ export const PULSE_LEAD = chip('pulse lead', 55, 96); // G3–C7
 export const PULSE_2    = chip('pulse 2',    48, 91); // C3–G6, counter-line
 export const TRI_BASS   = chip('tri bass',   28, 60); // E1–C4
 
-/** Chip stand-in for the brass section — same span, no lungs. */
 export const PULSE_BRASS = chip('pulse brass', 40, 82);
 
 /**
@@ -67,10 +63,14 @@ export const PULSE_BRASS = chip('pulse brass', 40, 82);
  * holding it to a wind player's tongue would reject exactly the lines we want.
  */
 export const LEAD: Instrument = { name: 'lead', low: midi(48), high: midi(96), class: 'chip' };
-/** Brass as a SECTION (trumpet down through trombone) — block voicings span wider than any one horn. */
 export const BRASS_SECTION = sectionOf('brass', 40, 82, 9);
-/** Winds in unison (flutes over oboes/clarinets) — spans wider than any one player. */
-export const WIND_SECTION = sectionOf('winds', 55, 93, 12);
+/**
+ * Winds in unison (flutes over clarinets) — spans wider than any one player, and
+ * articulates like the instruments actually in that range. It was briefly given the
+ * oboe's 12/s while carrying a G3–C7 span no oboe can reach, which made it the one
+ * voice that could not play a sixteenth at the top of the tempo band.
+ */
+export const WIND_SECTION = sectionOf('winds', 55, 93, 14);
 
 export const WINDS: readonly InstrumentSpec[] = [FLUTE, OBOE, CLARINET, BASSOON];
 export const BRASS: readonly InstrumentSpec[] = [TRUMPET, HORN, TROMBONE, TUBA];
@@ -78,28 +78,29 @@ export const CHIP: readonly InstrumentSpec[] = [PULSE_LEAD, PULSE_2, PULSE_BRASS
 export const SECTIONS: readonly InstrumentSpec[] = [BRASS_SECTION, WIND_SECTION];
 export const ALL_SPECS: readonly InstrumentSpec[] = [...WINDS, ...BRASS, ...CHIP, ...SECTIONS];
 
-export const isChip = (inst: Instrument): boolean => inst.class === 'chip';
-
-/**
- * The shortest note this voice should be asked to articulate, in ticks.
- *
- * Deliberately derived from the voice CLASS and not from tempo. Tempo never enters
- * generation (§8.5) — it constrains the writing through the instruments, and the
- * critic checks the result against the actual BPM afterwards. So this is the coarse,
- * always-true rule: a wind section can tongue sixteenths, nobody should be writing
- * them thirty-seconds, and a pulse channel does not care either way.
- */
-export function minArticulation(inst: Instrument): number {
-  return inst.class === 'chip' ? PPQ / 8 : PPQ / 4;
-}
-
-/** The spec for an instrument, if it has one. Plain `Instrument`s (LEAD) return null. */
 export function specFor(inst: Instrument): InstrumentSpec | null {
   for (const s of ALL_SPECS) if (s.name === inst.name) return s;
   return null;
 }
 
-export const VOICE_CLASSES: readonly VoiceClass[] = ['chip', 'acoustic'];
+/**
+ * The fastest tempo generation is written to survive. Generation stays a pure function
+ * of the genome — the project's BPM never reaches it (§8.5) — but the articulation
+ * floor below has to assume *some* tempo, and an assumption with a name can be checked
+ * and changed. It was previously a bare `PPQ / 4`, which is this calculation evaluated
+ * at roughly 170 BPM and then forgotten, so the top of the band silently broke.
+ */
+export const GENERATION_REF_BPM = 185;
+
+/**
+ * The shortest note this voice should be asked to articulate, in ticks — the
+ * instrument's own ceiling, converted at the reference tempo.
+ */
+export function minArticulation(inst: Instrument): number {
+  const s = specFor(inst);
+  if (!s || !Number.isFinite(s.notesPerSec)) return PPQ / 8;
+  return Math.ceil((PPQ * GENERATION_REF_BPM) / (60 * s.notesPerSec));
+}
 
 // ─── palettes ────────────────────────────────────────────────────────────────
 
@@ -153,12 +154,10 @@ export const PALETTES: Readonly<Record<Palette, PaletteSpec>> = {
 export const PALETTE_ORDER: readonly Palette[] =
   ['chip-orchestral', 'chip-brass', 'winds-lead', 'chip-winds', 'full-chip'];
 
-/** Is `pitch` inside the instrument's practical range? */
 export function inRange(pitch: Midi, inst: Instrument): boolean {
   return pitch >= inst.low && pitch <= inst.high;
 }
 
-/** Nearest octave transposition of `pitch` that lands inside the range (or clamped). */
 export function fitToRange(pitch: Midi, inst: Instrument): Midi {
   let p: number = pitch;
   while (p < inst.low) p += 12;

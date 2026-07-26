@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TIMBRES } from '../core/index.js';
 import { arrange } from '../generate/index.js';
-import { fixtureContext, fixtureGenome } from '../generate/fixtures.js';
+import { fixtureContext, fixtureGenome } from '../testing/index.js';
 import { toSMF } from './export.js';
 
 const G = fixtureContext();
@@ -27,14 +27,14 @@ function programAfterTrackName(data: Uint8Array, name: string): number | null {
   return null;
 }
 
-describe('MIDI export — the wire format munch reads', () => {
+describe('MIDI export — the advanced drawer’s way out to a DAW', () => {
   it('is a well-formed SMF header', () => {
     expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('MThd');
   });
 
   it('stamps each pitched track with its timbre’s GM program', () => {
-    // This is the cross-repo contract: munch recovers the timbre from these numbers.
-    // A chip lead exported as a flute would render as a flute in the game.
+    // The GM program is the only place a timbre survives the trip out and back:
+    // re-importing the file has nothing else to recover a chip lead from.
     expect(programAfterTrackName(bytes, 'melody')).toBe(TIMBRES['pulse-lead'].gmProgram);
     expect(programAfterTrackName(bytes, 'bass')).toBe(TIMBRES['tri-bass'].gmProgram);
     expect(programAfterTrackName(bytes, 'winds')).toBe(TIMBRES.winds.gmProgram);

@@ -16,7 +16,6 @@ export interface Motif {
    * must preserve it (dev check: assertMotif). Constructing via motif() guarantees it.
    */
   notes: readonly Note[];
-  /** May exceed the last note's end, to carry a trailing rest (spec §5.3). */
   length: Tick;
 }
 
@@ -64,6 +63,7 @@ export interface Meter {
 }
 
 export type Role = 'melody' | 'bass' | 'drums' | 'winds' | 'brass';
+export const ROLE_ORDER: readonly Role[] = ['melody', 'bass', 'drums', 'winds', 'brass'];
 
 /**
  * What kind of thing is making the sound. This is a CONSTRAINT class, not a timbre:

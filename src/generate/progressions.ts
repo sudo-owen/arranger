@@ -18,24 +18,19 @@ import { barTicks, pc, tick } from '../core/index.js';
  * that without the track becoming a different piece if every option shares a tonic.
  */
 
-/** Where a progression sits on the dark → bright axis the fortune mood axis drives. */
 export type Brightness = 'dark' | 'neutral' | 'bright';
 
 export interface ProgressionStep {
-  /** Semitones above the tonic. */
   semitones: number;
   quality: Quality;
 }
 
 export interface Progression {
   id: string;
-  /** Roman-numeral display, e.g. "i–♭VI–♭VII–i". */
   name: string;
   blurb: string;
   brightness: Brightness;
-  /** The key mode this is written against. */
   mode: Mode;
-  /** One chord per bar. */
   steps: readonly ProgressionStep[];
 }
 
@@ -107,7 +102,6 @@ export const PROGRESSIONS: readonly Progression[] = [
   },
 ];
 
-/** Progressions written for this mode. */
 export function progressionsFor(mode: Mode): readonly Progression[] {
   return PROGRESSIONS.filter((p) => p.mode === mode);
 }
@@ -116,7 +110,6 @@ export function progressionById(id: string): Progression | null {
   return PROGRESSIONS.find((p) => p.id === id) ?? null;
 }
 
-/** The safe opening choice — the loop that works under almost any driving hook. */
 export function defaultProgression(mode: Mode): Progression {
   return progressionById(mode === 'minor' ? 'aeolian-vamp' : 'heroic-major')
     ?? PROGRESSIONS[0]!;
@@ -146,7 +139,6 @@ export function spreadByBrightness(list: readonly Progression[], count: number):
   return out;
 }
 
-/** Chord for one step, in a concrete key. */
 export function chordOf(step: ProgressionStep, key: Key): Chord {
   return { root: pc(key.tonic + step.semitones), quality: step.quality };
 }

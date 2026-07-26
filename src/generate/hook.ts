@@ -1,6 +1,7 @@
-import type { Context, Key, Meter, Motif, Note, Rng, Tick } from '../core/index.js';
+import type { Context, Key, Meter, Motif, Note, Rng } from '../core/index.js';
 import {
-  PPQ, barTicks, fromDiatonicDegree, makeRng, motif, sequence, tick, toDiatonicDegree, weightsFor,
+  PPQ, barTicks, fromDiatonicDegree, makeRng, motif, sequence, sixteenthsPerBar, tick, tileTo,
+  toDiatonicDegree, weightsFor,
 } from '../core/index.js';
 
 /**
@@ -26,15 +27,10 @@ import {
  */
 
 export type RestatementScheme =
-  /** A A — the cell twice, unchanged. Blunt and extremely sticky. */
   | 'immediate'
-  /** A A↑ — restate a diatonic step higher. The Pokémon R/B battle gesture. */
   | 'sequence-up'
-  /** A A↓ — restate a step lower; reads as settling rather than rising. */
   | 'sequence-down'
-  /** A B — the answer turns down toward the tonic, so the pair closes. */
   | 'answer'
-  /** A A A A — a riff that cycles underneath instead of a phrase that ends. */
   | 'ostinato';
 
 export type RhythmName = 'driving-8ths' | 'gallop' | 'syncopated-16ths' | 'fanfare' | 'march';
@@ -44,7 +40,6 @@ export const HOOK_SCHEMES: readonly RestatementScheme[] =
 export const HOOK_RHYTHMS: readonly RhythmName[] =
   ['driving-8ths', 'gallop', 'syncopated-16ths', 'fanfare', 'march'];
 
-/** Figures as [startSixteenth, lengthSixteenths] within one 4/4 bar. */
 const RHYTHMS: Readonly<Record<RhythmName, readonly (readonly [number, number])[]>> = {
   'driving-8ths': [[0, 2], [2, 2], [4, 2], [6, 2], [8, 2], [10, 2], [12, 2], [14, 2]],
   gallop: [[0, 1], [1, 1], [2, 2], [4, 1], [5, 1], [6, 2], [8, 1], [9, 1], [10, 2], [12, 4]],
@@ -79,18 +74,12 @@ export interface HookOptions {
   seed: number;
   key: Key;
   meter: Meter;
-  /** 1 or 2. Two-bar cells breathe; one-bar cells hammer. */
   cellBars: number;
   scheme: RestatementScheme;
   rhythm: RhythmName;
-  /** Base absolute scale degree — roughly middle C at 35. */
   centre?: number;
 }
 
-/** Sixteenths in one bar. (Assumes a /4 denominator, which is every battle meter here.) */
-const sixteenthsPerBar = (meter: Meter): number => Math.round(meter.num * 4 * (4 / meter.den));
-
-/** Fold an out-of-range index back inside, so a step at the edge still MOVES. */
 function reflect(i: number, len: number): number {
   let v = i < 0 ? -i : i;
   if (v > len - 1) v = 2 * (len - 1) - v;
@@ -175,7 +164,6 @@ export function generateHook(o: HookOptions): Hook {
   };
 }
 
-/** Silence at the end of each phrase, in sixteenths. An eighth note of air. */
 export const DEFAULT_BREATH = 2;
 
 /**
@@ -203,7 +191,6 @@ export function renderHook(h: Hook, bars: number, breathSixteenths = DEFAULT_BRE
   return tileTo(breathe(phrase, breathSixteenths * (PPQ / 4)), target);
 }
 
-/** Clear the last `ticks` of a phrase, trimming any note that runs into it. */
 function breathe(m: Motif, ticks: number): Motif {
   if (ticks <= 0 || m.length <= ticks) return m;
   const cutoff = m.length - ticks;
@@ -215,7 +202,6 @@ function breathe(m: Motif, ticks: number): Motif {
   return motif(notes, m.length);
 }
 
-/** One complete statement of the hook — usually the cell and its answer. */
 export function statement(h: Hook): Motif {
   const ctx: Context = { key: h.key, harmony: [], meter: h.meter, weights: weightsFor(h.meter) };
   switch (h.scheme) {
@@ -252,20 +238,6 @@ function answer(h: Hook): Motif {
   return motif(notes, tick(len * 2));
 }
 
-/** Repeat `m` until it fills `target`, clipping the final pass. */
-function tileTo(m: Motif, target: Tick): Motif {
-  if (m.length <= 0) return motif([], target);
-  const notes: Note[] = [];
-  for (let offset = 0; offset < target; offset += m.length) {
-    for (const n of m.notes) {
-      const start = n.start + offset;
-      if (start >= target) break;
-      notes.push({ ...n, start: tick(start), duration: tick(Math.min(n.duration, target - start)) });
-    }
-  }
-  return motif(notes, target);
-}
-
 // ─── description helpers (the card copy) ─────────────────────────────────────
 
 export const SCHEME_LABEL: Readonly<Record<RestatementScheme, string>> = {
@@ -278,7 +250,6 @@ export const RHYTHM_LABEL: Readonly<Record<RhythmName, string>> = {
   fanfare: 'Fanfare', march: 'March',
 };
 
-/** How many distinct pitches the cell actually uses — the memorability number. */
 export function distinctPitches(h: Hook): number {
   return new Set(h.cell.notes.map((n) => n.pitch)).size;
 }

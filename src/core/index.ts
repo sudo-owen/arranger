@@ -7,6 +7,8 @@ export * from './rng.js';
 export * from './types.js';
 export * from './genome.js';
 export * from './pitch.js';
+export * from './math.js';
+export * from './mood.js';
 export * from './meter.js';
 export * from './motif.js';
 export * from './operators.js';

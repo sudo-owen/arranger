@@ -13,12 +13,10 @@ export type Midi = number & { readonly __brand: 'Midi' };
 export type Degree = number & { readonly __brand: 'Degree' };
 export type PC = number & { readonly __brand: 'PC' };
 
-/** Ticks are always integers — a defensive round keeps float drift out of the domain. */
 export const tick = (n: number): Tick => Math.round(n) as Tick;
 export const midi = (n: number): Midi => n as Midi;
 export const degree = (n: number): Degree => n as Degree;
 
-/** Pitch class, normalised into 0–11. Pitch-class math wraps constantly. */
 export const pc = (n: number): PC => (((n % 12) + 12) % 12) as PC;
 
 /**
