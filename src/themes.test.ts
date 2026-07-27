@@ -44,15 +44,21 @@ describe('published themes', () => {
 });
 
 describe('specProblems', () => {
-  const good = themes[0]!.spec;
+  // Resolved per-test, not at collection: an empty `themes/` must fail the guard test
+  // above with its own message rather than killing the whole file before it runs.
+  const good = (): SongSpec => {
+    const first = themes[0];
+    if (!first) throw new Error(`no themes/*.json in ${THEME_DIR}`);
+    return first.spec;
+  };
   const broken = (patch: (s: SongSpec) => void): SongSpec => {
-    const copy = JSON.parse(JSON.stringify(good)) as SongSpec;
+    const copy = JSON.parse(JSON.stringify(good())) as SongSpec;
     patch(copy);
     return copy;
   };
 
   it('accepts a published theme', () => {
-    expect(specProblems(good)).toEqual([]);
+    expect(specProblems(good())).toEqual([]);
   });
 
   // The two drifts that actually happened between the repos.

@@ -1,127 +1,131 @@
 {
   "version": 1,
-  "bpm": 168,
+  "bpm": 155,
   "meter": {
     "num": 4,
     "den": 4
   },
   "key": {
-    "tonic": 9,
+    "tonic": 8,
     "mode": "minor"
   },
-  "bars": 44,
+  "bars": 40,
   "hook": {
     "cell": {
       "notes": [
         {
           "start": 0,
-          "duration": 240,
-          "pitch": 76,
+          "duration": 960,
+          "pitch": 68,
           "velocity": 104
-        },
-        {
-          "start": 240,
-          "duration": 240,
-          "pitch": 69,
-          "velocity": 88
-        },
-        {
-          "start": 480,
-          "duration": 480,
-          "pitch": 72,
-          "velocity": 88
         },
         {
           "start": 960,
-          "duration": 240,
-          "pitch": 69,
+          "duration": 480,
+          "pitch": 68,
           "velocity": 104
-        },
-        {
-          "start": 1200,
-          "duration": 240,
-          "pitch": 72,
-          "velocity": 88
         },
         {
           "start": 1440,
           "duration": 480,
-          "pitch": 76,
+          "pitch": 71,
           "velocity": 88
         },
         {
           "start": 1920,
-          "duration": 240,
-          "pitch": 69,
+          "duration": 960,
+          "pitch": 73,
           "velocity": 104
-        },
-        {
-          "start": 2160,
-          "duration": 240,
-          "pitch": 76,
-          "velocity": 88
-        },
-        {
-          "start": 2400,
-          "duration": 480,
-          "pitch": 72,
-          "velocity": 88
         },
         {
           "start": 2880,
           "duration": 960,
-          "pitch": 69,
+          "pitch": 68,
+          "velocity": 104
+        },
+        {
+          "start": 3840,
+          "duration": 960,
+          "pitch": 73,
+          "velocity": 104
+        },
+        {
+          "start": 4800,
+          "duration": 480,
+          "pitch": 73,
+          "velocity": 104
+        },
+        {
+          "start": 5280,
+          "duration": 480,
+          "pitch": 71,
+          "velocity": 88
+        },
+        {
+          "start": 5760,
+          "duration": 960,
+          "pitch": 73,
+          "velocity": 104
+        },
+        {
+          "start": 6720,
+          "duration": 960,
+          "pitch": 68,
           "velocity": 104
         }
       ],
-      "length": 3840
+      "length": 7680
     },
     "scheme": "sequence-down",
-    "rhythm": "gallop",
+    "rhythm": "march",
     "key": {
-      "tonic": 9,
+      "tonic": 8,
       "mode": "minor"
     },
     "meter": {
       "num": 4,
       "den": 4
     },
-    "cellBars": 1
+    "cellBars": 2
   },
   "genome": {
     "version": 1,
-    "palette": "chip-orchestral",
+    "palette": "low-winds",
     "melody": {
-      "seed": 156030877,
-      "ornament": 0.5853018478490413,
-      "radius": 2
+      "seed": 966812838,
+      "ornament": 0.49348805369809273
     },
     "bass": {
-      "seed": 841995992,
-      "walkiness": 0.3873038669116795,
+      "seed": 841178219,
+      "walkiness": 0.3345328588038683,
       "register": 0
     },
     "tenor": {
-      "seed": 480221,
-      "motion": "pedal",
-      "presence": 0.45
+      "seed": 970989254,
+      "motion": "drive",
+      "presence": 0.3397479294333607
     },
     "drums": {
-      "seed": 281155312,
-      "fillDensity": 0.719223717530258,
+      "seed": 350630368,
+      "fillDensity": 0.34842175904195755,
       "swing": 0
     },
     "winds": {
-      "seed": 368163343,
-      "activity": 0.3913313974160701,
-      "ornament": 0.03673024277668446
+      "seed": 119168874,
+      "activity": 0.6725409245816991
     },
     "brass": {
-      "seed": 685951050,
+      "seed": 877980750,
       "voicing": "close",
-      "density": 0.672412400902249
+      "density": 0.7955030173296109
     }
   },
   "progressionId": "aeolian-vamp",
-  "formTemplate": "arc"
+  "formTemplate": "arc",
+  "variation": {
+    "intro": "thinned",
+    "A'": "ornamented",
+    "B": "thinned",
+    "A\"": "octave-up"
+  }
 }
