@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { PPQ, midi, motif, tick } from '../core/index.js';
 import { MOOD_CORNERS, arrangeAtMood, renderSong } from '../generate/index.js';
 import { violations } from '../critic/index.js';
-import { Store, chooseBeds, isFallbackSet } from './state.js';
-import type { Candidate } from './state.js';
+import { STAGES, Store, chooseBeds, isFallbackSet, listening, reachable } from './state.js';
+import type { Candidate, Stage } from './state.js';
+import type { SongSpec } from '../generate/index.js';
 
 /** A store parked on a generated set of arrangements. */
 function seeded(count = 4): Store {
@@ -181,6 +182,178 @@ describe('a committed variation reaches every path that builds an arrangement', 
     const rebuilt = renderSong(JSON.parse(JSON.stringify(spec)) as typeof spec, store.get().mood);
     expect(rebuilt.tracks.map((t) => t.motif.notes))
       .toEqual(store.get().candidates[0]!.arr.tracks.map((t) => t.motif.notes));
+  });
+});
+
+describe('a song.json round trip', () => {
+  /** A store parked on a fully authored track: hook, bed, form and a variation. */
+  function authored(): Store {
+    const store = new Store();
+    store.generateHookDrafts({ tonic: 9, mode: 'minor' }, 1);
+    store.useSelectedHook();
+    store.generateBeds(4);
+    store.useForm(store.planForms(60)[0]!);
+    store.useVariation({ intro: 'thinned', "A'": 'ornamented' }, 'Terraced');
+    return store;
+  }
+
+  /** Through a file, not just through memory — object identity would hide a lost field. */
+  const onDisk = (spec: SongSpec): SongSpec => JSON.parse(JSON.stringify(spec, null, 2)) as SongSpec;
+
+  it('loads back the arrangement that was exported, note for note', () => {
+    const store = authored();
+    const spec = store.songSpec()!;
+    const before = store.get().candidates[0]!.arr;
+
+    const loaded = new Store();
+    expect(loaded.loadSpec(onDisk(spec))).toBe(true);
+
+    expect(loaded.get().candidates[0]!.arr.tracks.map((t) => t.motif.notes))
+      .toEqual(before.tracks.map((t) => t.motif.notes));
+  });
+
+  it('restores every choice the flow made, not just the notes', () => {
+    // A take you cannot keep editing is a dead end — the point of loading a theme back
+    // is to change something about it.
+    const store = authored();
+    const spec = store.songSpec()!;
+    const loaded = new Store();
+    loaded.loadSpec(onDisk(spec));
+    const s = loaded.get();
+
+    expect(s.hook).toEqual(spec.hook);
+    expect(s.key).toEqual(spec.key);
+    expect(s.bpm).toBe(spec.bpm);
+    expect(s.meter).toEqual(spec.meter);
+    expect(s.variation).toEqual(spec.variation);
+    expect(s.form?.template).toBe(spec.formTemplate);
+    expect(s.candidates[0]!.genome).toEqual(spec.genome);
+    expect(s.candidates[0]!.progression?.id).toBe(spec.progressionId);
+    // The seed a reroll has to hold constant, or editing a loaded theme rewrites its tune.
+    expect(s.melodySeed).toBe(spec.genome.melody.seed);
+  });
+
+  it('re-exports byte-identically, so a load/save cycle is not an edit', () => {
+    const store = authored();
+    const spec = onDisk(store.songSpec()!);
+    const loaded = new Store();
+    loaded.loadSpec(spec);
+    expect(loaded.songSpec()).toEqual(spec);
+  });
+
+  it('survives the trip at every mood corner, the way the game will play it', () => {
+    const store = authored();
+    const loaded = new Store();
+    loaded.loadSpec(onDisk(store.songSpec()!));
+    const spec = loaded.songSpec()!;
+    for (const { mood, label } of MOOD_CORNERS) {
+      const arr = renderSong(spec, mood);
+      expect(violations(arr, arr.source, spec.bpm), label).toEqual([]);
+    }
+  });
+
+  it('refuses a spec this engine cannot render, rather than half-loading it', () => {
+    const store = authored();
+    const spec = onDisk(store.songSpec()!);
+    const loaded = new Store();
+
+    expect(loaded.loadSpec({ ...spec, progressionId: 'no-such-progression' })).toBe(false);
+    expect(loaded.get().source).toBeNull();
+    expect(loaded.get().status).toMatch(/unknown progression/);
+
+    // ...and the store is still usable afterwards.
+    expect(loaded.loadSpec(spec)).toBe(true);
+    expect(loaded.get().source).not.toBeNull();
+  });
+
+  it('opens on the pad, which is the only thing left to do to a finished theme', () => {
+    const loaded = new Store();
+    loaded.loadSpec(onDisk(authored().songSpec()!));
+    expect(loaded.get().stage).toBe('mood');
+    expect(STAGES[STAGES.length - 1]).toBe('mood');
+  });
+});
+
+describe('the rail only offers stages that have something to offer', () => {
+  /** Exactly what each stage view refuses to draw without — the rail must agree. */
+  const hasContent = (s: ReturnType<Store['get']>, stage: Stage): boolean => {
+    const bed = s.candidates[s.selected] !== undefined;
+    switch (stage) {
+      case 'hook': return !listening(s);
+      case 'bed': return !listening(s);
+      case 'form': return bed && s.hook !== null;
+      case 'vary': return bed && s.form !== null;
+      case 'mood': return bed;
+    }
+  };
+
+  it('never offers a stage whose only content is an instruction to go back', () => {
+    // Walked one commitment at a time, checking the rail at every point along the way.
+    const store = new Store();
+    const check = (): void => {
+      for (const stage of STAGES) {
+        if (!reachable(store.get(), stage)) continue;
+        expect(hasContent(store.get(), stage), `${stage} offered with nothing on it`).toBe(true);
+      }
+    };
+
+    check();
+    store.generateHookDrafts({ tonic: 9, mode: 'minor' }, 1);
+    check();
+    store.useSelectedHook();
+    check();
+    store.generateBeds(4);
+    check();
+    store.useForm(store.planForms(60)[0]!);
+    check();
+    store.useVariation({ intro: 'thinned' }, 'Terraced');
+    check();
+  });
+
+  it('opens each stage exactly as its precondition is met, not before', () => {
+    const store = new Store();
+    const open = (): Stage[] => STAGES.filter((st) => reachable(store.get(), st));
+
+    expect(open()).toEqual(['hook']);
+
+    store.generateHookDrafts({ tonic: 9, mode: 'minor' }, 1);
+    store.useSelectedHook();
+    // A committed hook opens the Bed stage, and nothing past it — there is no bed yet.
+    expect(open()).toEqual(['hook', 'bed']);
+
+    store.generateBeds(4);
+    // A bed makes Form and Mood live. Vary still needs a form to vary.
+    expect(open()).toEqual(['hook', 'bed', 'form', 'mood']);
+
+    store.useForm(store.planForms(60)[0]!);
+    expect(open()).toEqual(['hook', 'bed', 'form', 'vary', 'mood']);
+  });
+
+  it('shuts the choosing stages for imported material, and leaves the pad open', () => {
+    // Listen mode: a source with no hook behind it. Hook and Bed have nothing to ask,
+    // and Form/Vary cannot rebuild a tune they never had.
+    const store = new Store();
+    const q = PPQ;
+    const tune = motif(
+      [57, 60, 62, 64].map((p, i) => ({ start: tick(i * q), duration: tick(q), pitch: midi(p), velocity: 96 })),
+      tick(4 * q),
+    );
+    store.loadSource(tune, 120, { num: 4, den: 4 });
+    store.generateBeds(2);
+    expect(listening(store.get())).toBe(true);
+    expect(STAGES.filter((st) => reachable(store.get(), st))).toEqual(['mood']);
+  });
+
+  it('opens the whole rail for a loaded song.json, which arrives fully authored', () => {
+    const source = new Store();
+    source.generateHookDrafts({ tonic: 9, mode: 'minor' }, 1);
+    source.useSelectedHook();
+    source.generateBeds(4);
+    source.useForm(source.planForms(60)[0]!);
+
+    const store = new Store();
+    store.loadSpec(JSON.parse(JSON.stringify(source.songSpec()!)) as SongSpec);
+    expect(STAGES.filter((st) => reachable(store.get(), st))).toEqual(['hook', 'bed', 'form', 'vary', 'mood']);
   });
 });
 

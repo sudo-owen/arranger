@@ -1,11 +1,11 @@
 import { PALETTES, ROLE_ORDER, barsIn, clampMood, secPerTick } from '../core/index.js';
 import type { Arrangement, Form, Key, Mode, Mood, Motif, Role, SectionLabel } from '../core/index.js';
 import { MOOD_ARCS, MOOD_CORNERS, RHYTHM_LABEL, SCHEME_LABEL, TREATMENTS, describeMood, distinctPitches, formTicks, layerGains, renderHook } from '../generate/index.js';
-import type { MoodArc, VariationPlan } from '../generate/index.js';
+import type { MoodArc, SongSpec, VariationPlan } from '../generate/index.js';
 import { Transport } from '../audio/index.js';
 import { parseMidi, toSMF } from '../midi/index.js';
 import { ROLE_COLORS, drawRoll, lineOf, linesOf, sharedRange } from './pianoroll.js';
-import { LENGTH_TARGETS, NOTE_NAMES, STAGES, STAGE_LABEL, Store, chordLabel, isFallbackSet, keyName } from './state.js';
+import { LENGTH_TARGETS, NOTE_NAMES, STAGES, STAGE_LABEL, Store, chordLabel, isFallbackSet, keyName, listening, reachable } from './state.js';
 import type { AppState, Stage } from './state.js';
 
 // ─── element helpers (no casts; narrow by instanceof) ────────────────────────
@@ -145,19 +145,6 @@ function renderLegend(): void {
 }
 
 // ─── the rail ────────────────────────────────────────────────────────────────
-/**
- * Imported material has a source and no hook: nobody chose a cell, and the bed was
- * arranged automatically over the file's own inferred harmony. The two stages that exist
- * to make those choices have nothing to offer, so they stop being destinations. `New
- * hook` in the top bar is the way back out.
- */
-const listening = (s: AppState): boolean => s.source !== null && s.hook === null;
-
-function reachable(s: AppState, stage: Stage): boolean {
-  if (listening(s)) return stage !== 'hook' && stage !== 'bed';
-  return stage === 'hook' || (s.source !== null && s.harmony !== null);
-}
-
 function stageSummary(s: AppState, stage: Stage): string {
   switch (stage) {
     case 'hook':
@@ -167,7 +154,9 @@ function stageSummary(s: AppState, stage: Stage): string {
       if (listening(s)) return 'arranged automatically';
       return s.candidates.length ? `${s.candidates.length} candidates` : '—';
     case 'mood':
-      return s.source ? `${s.bpm} BPM` : '—';
+      // The pad's own reading, not the tempo — bpm is chosen back on Hook and repeating
+      // it here made the rail's last tile look like it was about to change the clock.
+      return s.source ? describeMood(s.mood).name : '—';
     case 'form':
       return s.source ? `${barsOf(s)} bars` : '—';
     case 'vary': {
@@ -211,7 +200,9 @@ function panelHead(stage: Stage, title: string, hint?: string, action?: HTMLElem
   const head = h('div', { cls: 'panel-head' },
     h('div', {}, h('span', { cls: 'section-no', text: no }), h('h2', { text: title })),
     action ?? null);
-  if (!hint) head.style.marginBottom = '14px';
+  // With no hint under it the head owns the whole gap to what follows; with one, the
+  // hint's own bottom margin does. Both live in the stylesheet.
+  if (!hint) head.classList.add('lone');
   return hint ? [head, h('p', { cls: 'hint', text: hint })] : [head];
 }
 
@@ -278,8 +269,7 @@ function renderHookStage(s: AppState, root: HTMLElement): void {
     gen));
   root.append(tempoPresets(s));
 
-  const grid = h('div', { cls: 'grid' });
-  grid.style.marginTop = '14px';
+  const grid = h('div', { cls: 'grid stack' });
   root.append(grid);
 
   if (!s.hookDrafts.length) {
@@ -379,8 +369,7 @@ function renderBedStage(s: AppState, root: HTMLElement): void {
   if (s.candidates.length) {
     const near = h('button', { cls: 'small', text: '± variations of the selected take' });
     near.addEventListener('click', () => { stopPlayback(); store.generateNeighbours(6); });
-    const bar = h('div', { cls: 'controls' });
-    bar.style.marginTop = '12px';
+    const bar = h('div', { cls: 'controls stack' });
     bar.append(near);
     root.append(bar);
   }
@@ -570,7 +559,11 @@ function renderMoodStage(s: AppState, root: HTMLElement): void {
     h('div', { cls: 'controls' }, tempoField(s)),
     tempoPresets(s),
     h('div', { cls: 'knobs' }, h('label', { text: 'Level' }, vol, h('span', { cls: 'val' }))),
-    mainPlayer(s));
+    mainPlayer(s),
+    // The end of the flow, so this is where the export lives. It also catches imported
+    // material, which lands straight on this stage with no form and no hook — "I just
+    // want the MIDI out" is the entire reason that path exists.
+    exportBlock(s));
 }
 
 // Concrete hexes from ROLE_COLORS, not CSS variables: the canvas needs values anyway,
@@ -621,13 +614,11 @@ function renderFormStage(s: AppState, root: HTMLElement): void {
     return;
   }
 
-  const grid = h('div');
-  grid.style.marginTop = '14px';
+  const grid = h('div', { cls: 'cardlist' });
   for (const plan of plans) {
     const bars = barsIn(plan.candidate.arr.length, s.meter);
     const chosen = s.form?.template === plan.shape.template && s.candidates[s.selected]?.arr.length === plan.candidate.arr.length;
     const card = h('div', { cls: 'card' + (chosen ? ' selected' : '') });
-    card.style.marginBottom = '10px';
     const use = h('button', { cls: 'small', text: chosen ? 'in use' : 'use this' });
     use.disabled = chosen || plan.problems.length > 0;
     use.addEventListener('click', (e) => { e.stopPropagation(); stopPlayback(); store.useForm(plan); });
@@ -653,9 +644,7 @@ function renderVaryStage(s: AppState, root: HTMLElement): void {
     'Percentages are the share of that section’s notes the treatment moved.'));
 
   if (!s.form || !s.candidates[s.selected]) {
-    // Export still belongs here. Imported material arrives with no form and no hook, and
-    // "I just want the MIDI out" is the entire reason that path exists.
-    root.append(emptyNote('Commit a form first.'), exportBlock(s));
+    root.append(emptyNote('Commit a form first.'));
     return;
   }
   if (s.hook) {
@@ -666,12 +655,10 @@ function renderVaryStage(s: AppState, root: HTMLElement): void {
   const asList = (p: VariationPlan): string => s.form!.sections.map((sec) => p[sec.label] ?? 'as-written').join(' ');
   const inUse = asList(s.variation);
 
-  const grid = h('div');
-  grid.style.marginTop = '14px';
+  const grid = h('div', { cls: 'cardlist' });
   for (const plan of store.varyPlans()) {
     const chosen = asList(plan.scheme.plan) === inUse;
     const card = h('div', { cls: 'card' + (chosen ? ' selected' : '') });
-    card.style.marginBottom = '10px';
     const use = h('button', { cls: 'small', text: chosen ? 'in use' : 'use this' });
     use.disabled = chosen || plan.problems.length > 0;
     use.addEventListener('click', (e) => {
@@ -696,8 +683,7 @@ function renderVaryStage(s: AppState, root: HTMLElement): void {
   root.append(grid);
 
   // Per-section override — the part that makes this a bench rather than five presets.
-  const bench = h('div', { cls: 'card' });
-  bench.style.marginTop = '4px';
+  const bench = h('div', { cls: 'card bench stack' });
   bench.append(h('div', { cls: 'card-head' }, h('span', { cls: 't', text: 'Set one section at a time' })));
   for (const sec of s.form.sections) {
     const row = h('div', { cls: 'controls' });
@@ -714,7 +700,7 @@ function renderVaryStage(s: AppState, root: HTMLElement): void {
     }
     bench.append(row);
   }
-  root.append(bench, mainPlayer(s), exportBlock(s));
+  root.append(bench, mainPlayer(s));
 }
 
 /**
@@ -754,8 +740,7 @@ function exportBlock(s: AppState): HTMLElement {
 }
 
 function mainPlayer(s: AppState): HTMLElement {
-  const wrap = h('div');
-  wrap.style.marginTop = '16px';
+  const wrap = h('div', { cls: 'stack' });
   wrap.append(h('p', { cls: 'side-title', text: 'Selected arrangement' }));
   const c = h('canvas', { cls: 'roll roll-main scrub', attrs: { id: 'mainRoll' } });
   wrap.append(c);
@@ -803,7 +788,6 @@ function mainPlayer(s: AppState): HTMLElement {
 
   const srcRoll = h('canvas', { cls: 'roll roll-source', attrs: { id: 'sourceRoll' } });
   const srcTitle = h('p', { cls: 'side-title', text: `Hook, as written out over ${barsOf(s)} bars` });
-  srcTitle.style.marginTop = '16px';
 
   wrap.append(h('div', { cls: 'transport-row' }, play), srcTitle, srcRoll);
   requestAnimationFrame(() => { drawMain(); drawSource(); });
@@ -921,8 +905,10 @@ function render(s: AppState): void {
     next.replaceChildren(document.createTextNode('↓'), h('span', { text: 'export' }));
     next.disabled = !s.candidates[s.selected];
   } else {
+    // Held shut on the same rule as the rail, or the linear path would walk you into the
+    // dead end the rail just refused — and the disabled tile beside it would look wrong.
     next.replaceChildren(document.createTextNode('→'), h('span', { text: 'next' }));
-    next.disabled = false;
+    next.disabled = !reachable(s, STAGES[at + 1]!);
   }
 }
 
@@ -979,12 +965,39 @@ el('stageNext').addEventListener('click', () => {
   store.step(1);
 });
 
+/**
+ * One import, two shapes of file.
+ *
+ * A `.json` is a track this app already produced, so it comes back as a whole take with
+ * every choice intact and lands on the pad. MIDI is somebody else's tune with no hook
+ * behind it, so it can only be arranged automatically — the flow calls that listen mode.
+ * The extension decides; nothing else about the two paths is shared.
+ */
 input('file').addEventListener('change', (e) => {
   const target = e.currentTarget;
   if (!(target instanceof HTMLInputElement)) return;
   const file = target.files?.[0];
   if (!file) return;
   stopPlayback();
+  // Cleared either way, so re-picking the same file after a failed read still fires.
+  const reset = (): void => { target.value = ''; };
+
+  if (/\.json$/i.test(file.name)) {
+    file.text().then((text) => {
+      let spec: SongSpec;
+      try {
+        spec = JSON.parse(text) as SongSpec;
+      } catch (err) {
+        store.setStatus(`That file is not valid JSON: ${err instanceof Error ? err.message : 'unknown error'}`);
+        return;
+      }
+      // loadSpec reports its own problems — a spec this engine can't render is a
+      // packaging fault worth naming, not a generic read failure.
+      store.loadSpec(spec, file.name);
+    }).catch(() => store.setStatus('Could not read that file.')).finally(reset);
+    return;
+  }
+
   file.arrayBuffer().then((buf) => {
     try {
       const parsed = parseMidi(buf);
@@ -998,7 +1011,7 @@ input('file').addEventListener('change', (e) => {
     } catch (err) {
       store.setStatus(`Could not read that MIDI file: ${err instanceof Error ? err.message : 'unknown error'}`);
     }
-  }).catch(() => store.setStatus('Could not read that file.'));
+  }).catch(() => store.setStatus('Could not read that file.')).finally(reset);
 });
 
 // The way out of listen mode: drop the imported material and start choosing again.

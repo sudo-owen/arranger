@@ -11,8 +11,8 @@ import {
   MOOD_CORNERS, RHYTHM_LABEL, SCHEME_LABEL, arrange, arrangeAtMood, barsForSeconds,
   defaultProgression, describeMood, planForm, secondsForBars, shapesFor,
   extendTune, generateHook, generateHookSet, harmonyFromProgression, harmonyStates, inferHarmony,
-  neighbours, progressionsFor, rerollRole, renderHook, sampleHarmony,
-  spreadByBrightness, specCovers, wholeForm,
+  neighbours, progressionById, progressionsFor, rerollRole, renderHook, sampleHarmony,
+  spreadByBrightness, specCovers, specProblems, formOf, wholeForm,
   VARIATION_SCHEMES, driftAt, isStraight, varySource, variationProblems,
 } from '../generate/index.js';
 import { detectKey } from '../theory/index.js';
@@ -32,11 +32,48 @@ export interface Candidate {
   problems?: readonly string[];
 }
 
-export type Stage = 'hook' | 'bed' | 'mood' | 'form' | 'vary';
-export const STAGES: readonly Stage[] = ['hook', 'bed', 'mood', 'form', 'vary'];
+export type Stage = 'hook' | 'bed' | 'form' | 'vary' | 'mood';
+/**
+ * Mood comes last on purpose. It is the one stage that doesn't decide anything — it
+ * deforms whatever the other four settled on — so asking for it before the arrangement
+ * has a length, an arc or its octave shifts means auditioning a mood against material
+ * that is about to change underneath it. At the end, dragging the pad is a read on the
+ * finished track, and the corner report validates what actually ships.
+ */
+export const STAGES: readonly Stage[] = ['hook', 'bed', 'form', 'vary', 'mood'];
 export const STAGE_LABEL: Readonly<Record<Stage, string>> = {
   hook: 'Hook', bed: 'Bed', mood: 'Mood', form: 'Form', vary: 'Vary',
 };
+
+/**
+ * Imported material has a source and no hook: nobody chose a cell, and the bed was
+ * arranged automatically over the file's own inferred harmony. The two stages that exist
+ * to make those choices have nothing to offer, so they stop being destinations. `New
+ * hook` in the top bar is the way back out.
+ */
+export const listening = (s: AppState): boolean => s.source !== null && s.hook === null;
+
+/**
+ * Whether a stage has anything to offer yet.
+ *
+ * These are the same preconditions each stage view checks before it can draw itself. The
+ * difference is when they are asked: the rail refuses the trip rather than letting you
+ * take it and land on "Pick a bed first". A stage whose only content is an instruction to
+ * go back is not a destination, and offering it as one makes the flow look broken.
+ *
+ * The views keep their own guards regardless — a stage you are already standing on can
+ * lose its footing under you when an action clears the candidate set.
+ */
+export function reachable(s: AppState, stage: Stage): boolean {
+  const bed = s.candidates[s.selected] !== undefined;
+  switch (stage) {
+    case 'hook': return !listening(s);
+    case 'bed': return !listening(s) && s.source !== null && s.harmony !== null;
+    case 'form': return bed && s.hook !== null;
+    case 'vary': return bed && s.form !== null;
+    case 'mood': return bed;
+  }
+}
 
 export interface HookConstraints { tonic: number; mode: Mode }
 
@@ -219,6 +256,53 @@ export class Store {
     const snapshot: Snapshot = { source, key, meter, bpm, harmony, candidates: [], selected: -1, hook: null, mood: NEUTRAL_MOOD, form: null, variation: {} };
     const node = this.node('import', label, `${barsOf(source, meter)} bars · ${keyName(key)}`, snapshot, null);
     this.set({ ...restore(snapshot), evolution: [...this.state.evolution, node], activeEvolution: node.id, status: `Started with ${label}.` });
+  }
+
+  /**
+   * Load a published `song.json` back into the flow.
+   *
+   * The exact inverse of `songSpec()`, and it reconstructs the take the way `renderSong`
+   * does rather than the way the app originally built it — same source from the hook,
+   * same progression by id, same form from the template. Anything else and a theme would
+   * sound different here than in the game, which is the one thing a round trip has to
+   * rule out.
+   *
+   * Validated first for the same reason munch validates on load: a spec written against a
+   * different engine is a packaging fault, and saying so beats half-loading it.
+   */
+  loadSpec(spec: SongSpec, label = 'Imported song.json'): boolean {
+    const problems = specProblems(spec);
+    if (problems.length) {
+      this.set({ status: `That song.json is not playable by this engine: ${problems.join('; ')}` });
+      return false;
+    }
+
+    const source = renderHook(spec.hook, spec.bars);
+    const progression = progressionById(spec.progressionId);
+    const form = formOf(spec, spec.meter) ?? null;
+    const variation = spec.variation ?? {};
+    const { arr } = arrangeAtMood(
+      source, spec.key, spec.meter, spec.bars, spec.genome, progression, NEUTRAL_MOOD, form ?? undefined, variation,
+    );
+
+    const snapshot: Snapshot = {
+      source, key: spec.key, meter: spec.meter, bpm: spec.bpm, harmony: arr.harmony,
+      candidates: [{ genome: spec.genome, arr, progression }], selected: 0,
+      hook: spec.hook, mood: NEUTRAL_MOOD, form, variation,
+    };
+    const node = this.node('import', label,
+      `${spec.bars} bars · ${keyName(spec.key)} · ${spec.bpm} BPM`, snapshot, null);
+    this.set({
+      ...restore(snapshot),
+      // Every choice the flow makes is already made, so it opens where there is still
+      // something to do: the pad.
+      stage: 'mood',
+      melodySeed: spec.genome.melody.seed,
+      hookDrafts: [], selectedHookDraft: -1,
+      evolution: [...this.state.evolution, node], activeEvolution: node.id,
+      status: `Loaded ${label} — ${spec.bars} bars, ${keyName(spec.key)}. Drag the pad to hear it move.`,
+    });
+    return true;
   }
 
   setStage(stage: Stage): void { this.set({ stage }); }

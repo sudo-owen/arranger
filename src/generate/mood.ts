@@ -46,6 +46,27 @@ export function deform(base: Genome, mood: Mood): Genome {
   };
 }
 
+/**
+ * How far either side of the authored tempo mood is allowed to pull the clock.
+ *
+ * Narrow on purpose. Density is the honest way to say "frantic" — the arrangement has
+ * `fillDensity`, `walkiness` and the hats for that. Tempo is the blunt one, and past a
+ * few percent it stops reading as pressure and starts reading as a different recording.
+ */
+export const TEMPO_SWING = 0.08;
+
+/**
+ * The clock a mood asks for. Identity at neutral, exactly like `deform` — the authored
+ * tempo is what you hear at rest, and urgency leans it either side of that.
+ *
+ * Only urgency moves it. Fortune is the harmonic axis; a fight going badly is not a
+ * fight going faster.
+ */
+export function tempoFor(bpm: number, mood: Mood): number {
+  const { urgency: u } = clampMood(mood);
+  return bpm * (1 + TEMPO_SWING * (u - 0.5) * 2);
+}
+
 export function brightnessFor(fortune: number): Brightness {
   const f = clamp01(fortune);
   return f > 0.62 ? 'bright' : f < 0.38 ? 'dark' : 'neutral';

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { KEY, METER, MOOD_GRID, TEMPOS, fixtureContext, fixtureGenome, problemsFor, testHooks, track, tune, velocities } from '../testing/index.js';
-import type { Arrangement, Motif } from '../core/index.js';
+import type { Arrangement, Motif, Mood } from '../core/index.js';
 import { NEUTRAL_MOOD, PALETTE_ORDER, ROLE_ORDER, clampMood, makeRng } from '../core/index.js';
 import { arrange } from './arrange.js';
 import { violations } from '../critic/index.js';
 import { contourSimilarity, CONTOUR_FLOOR } from '../theory/index.js';
 import { generateHookSet, renderHook } from './hook.js';
-import { MOOD_CORNERS, brightnessFor, deform, describeMood, layerGains, progressionForMood } from './mood.js';
+import { MOOD_CORNERS, TEMPO_SWING, brightnessFor, deform, describeMood, layerGains, progressionForMood, tempoFor } from './mood.js';
 import { neighbours, rerollRole } from './mutate.js';
 import { renderSong } from './song.js';
 import type { SongSpec } from './song.js';
@@ -185,6 +185,58 @@ describe('layerGains', () => {
   it('brings brass in as fortune rises', () => {
     expect(layerGains({ urgency: 0.5, fortune: 1 }).brass)
       .toBeGreaterThan(layerGains({ urgency: 0.5, fortune: 0 }).brass);
+  });
+});
+
+describe('tempoFor', () => {
+  const BPM = 155;
+
+  it('leaves the authored tempo alone at neutral, the way deform does', () => {
+    expect(tempoFor(BPM, NEUTRAL_MOOD)).toBe(BPM);
+  });
+
+  it('leans the clock either side of the written tempo as urgency moves', () => {
+    expect(tempoFor(BPM, { urgency: 1, fortune: 0.5 })).toBeCloseTo(BPM * (1 + TEMPO_SWING), 10);
+    expect(tempoFor(BPM, { urgency: 0, fortune: 0.5 })).toBeCloseTo(BPM * (1 - TEMPO_SWING), 10);
+  });
+
+  it('is monotonic in urgency, so the music never speeds up as a fight calms down', () => {
+    let last = -Infinity;
+    for (let u = 0; u <= 1.0001; u += 0.05) {
+      const bpm = tempoFor(BPM, { urgency: u, fortune: 0.5 });
+      expect(bpm).toBeGreaterThan(last);
+      last = bpm;
+    }
+  });
+
+  it('ignores fortune — losing is not the same as hurrying', () => {
+    for (const fortune of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(tempoFor(BPM, { urgency: 0.7, fortune })).toBe(tempoFor(BPM, { urgency: 0.7, fortune: 0.5 }));
+    }
+  });
+
+  // Total over the unit square, like the rest of this module: out-of-range clamps.
+  // Non-finite input is outside the contract here exactly as it is for `deform` and
+  // `layerGains` — `clampMood` passes NaN straight through for all three.
+  it('stays inside the swing and stays positive at every mood, in range or out', () => {
+    const moods: Mood[] = [
+      ...MOOD_GRID,
+      { urgency: -5, fortune: 0.5 },
+      { urgency: 99, fortune: -99 },
+    ];
+    for (const mood of moods) {
+      const bpm = tempoFor(BPM, mood);
+      expect(Number.isFinite(bpm)).toBe(true);
+      expect(bpm).toBeGreaterThan(0);
+      expect(Math.abs(bpm / BPM - 1)).toBeLessThanOrEqual(TEMPO_SWING + 1e-9);
+    }
+  });
+
+  it('scales any authored tempo, not just the one theme that ships today', () => {
+    for (const bpm of TEMPOS) {
+      expect(tempoFor(bpm, NEUTRAL_MOOD)).toBe(bpm);
+      expect(tempoFor(bpm, { urgency: 1, fortune: 0.5 })).toBeGreaterThan(bpm);
+    }
   });
 });
 
